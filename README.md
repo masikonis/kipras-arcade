@@ -1,6 +1,6 @@
 # 🎮 Game Arcade
 
-A collection of browser games built by a young game designer using AI-assisted development.
+A collection of browser games built by Kipras (age 7) with AI-assisted development.
 
 ## How It Works
 
@@ -27,7 +27,7 @@ game-arcade/
 └── README.md
 ```
 
-## For the Game Designer 🧒
+## For Kipras 🧒
 
 1. Open this project in VS Code
 2. Open the Claude Code panel
@@ -37,7 +37,7 @@ game-arcade/
    - *"Add a high score to the star collector game"*
 4. Watch your game appear in the browser!
 
-## For Dad 👨‍💻
+## For Nerijus (Dad) 👨‍💻
 
 ### Setup
 1. Clone this repo
