@@ -1,10 +1,26 @@
 [
   {
     "id": "01-star-collector",
-    "title": "Star Collector",
-    "description": "Move your character to collect falling stars before they hit the ground!",
+    "title": "Žvaigždžių rinkėjas",
+    "description": "Judink veikėją ir rink krentančias žvaigždes, kol jos nepasiekė žemės!",
     "emoji": "⭐",
     "color": "#1a1a2e",
+    "added": "2026-04-02"
+  },
+  {
+    "id": "02-pizamu-puzzle",
+    "title": "Pižamų dienos Puzzle",
+    "description": "Sudėk Kipro nuotrauką iš dalių! Pasirink sunkumą ir stumk dalis į vietas.",
+    "emoji": "🧩",
+    "color": "#2a1a4e",
+    "added": "2026-04-02"
+  },
+  {
+    "id": "03-donut-runner",
+    "title": "Bėganti Spurga",
+    "description": "Bėk per saldainių šalį! Rink saldainius, venk alkantų dantų! 🍩🦷",
+    "emoji": "🍩",
+    "color": "#4a1942",
     "added": "2026-04-02"
   }
 ]

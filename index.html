@@ -1,10 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎮 Game Arcade</title>
-    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+    <title>Kipras Arcade</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+    <link rel="apple-touch-icon" id="appleTouchIcon">
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -71,7 +73,7 @@
         }
 
         .header h1 {
-            font-family: 'Lilita One', cursive;
+            font-family: 'Bungee', cursive;
             font-size: clamp(2.5rem, 8vw, 4.5rem);
             background: linear-gradient(135deg, var(--accent-1), var(--accent-3), var(--accent-2));
             -webkit-background-clip: text;
@@ -161,7 +163,7 @@
         }
 
         .card-body h3 {
-            font-family: 'Lilita One', cursive;
+            font-family: 'Bungee', cursive;
             font-size: 1.25rem;
             margin-bottom: 6px;
             letter-spacing: 0.5px;
@@ -259,17 +261,17 @@
 <body>
     <div class="container">
         <header class="header">
-            <h1>🎮 Game Arcade</h1>
-            <div class="subtitle">Built with imagination and AI</div>
-            <div class="game-count" id="gameCount">Loading...</div>
+            <h1>🎮 Kipras Arcade</h1>
+            <div class="subtitle">Sukurta su vaizduote ir AI</div>
+            <div class="game-count" id="gameCount">Kraunama...</div>
         </header>
 
         <div class="games-grid" id="gamesGrid">
-            <div class="loading">Loading games</div>
+            <div class="loading">Kraunami žaidimai</div>
         </div>
 
         <footer class="footer">
-            Made with ❤️ and Claude Code
+            Sukurta su ❤️ ir Claude Code
         </footer>
     </div>
 
@@ -288,19 +290,20 @@
                     grid.innerHTML = `
                         <div class="empty-state">
                             <span class="emoji">🚀</span>
-                            <p>No games yet! Open Claude Code and say:<br>
-                            <strong>"Create a new game where..."</strong></p>
+                            <p>Žaidimų dar nėra! Atidaryk Claude Code ir pasakyk:<br>
+                            <strong>„Sukurk naują žaidimą, kuriame..."</strong></p>
                         </div>`;
-                    counter.textContent = '0 games';
+                    counter.textContent = '0 žaidimų';
                     return;
                 }
 
-                counter.textContent = `${games.length} game${games.length !== 1 ? 's' : ''}`;
+                const gameWord = games.length === 1 ? 'žaidimas' : (games.length < 10 && games.length > 1) ? 'žaidimai' : 'žaidimų';
+                counter.textContent = `${games.length} ${gameWord}`;
 
                 grid.innerHTML = games.map((game, i) => {
                     const color = game.color || ACCENT_COLORS[i % ACCENT_COLORS.length];
                     const dateStr = game.added
-                        ? new Date(game.added + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        ? new Date(game.added + 'T00:00:00').toLocaleDateString('lt-LT', { month: 'long', day: 'numeric', year: 'numeric' })
                         : '';
                     return `
                         <a class="game-card" href="games/${game.id}/index.html">
@@ -311,7 +314,7 @@
                                 <h3>${game.title}</h3>
                                 <p>${game.description}</p>
                                 ${dateStr ? `<div class="card-date">${dateStr}</div>` : ''}
-                                <span class="play-badge">▶ Play</span>
+                                <span class="play-badge">▶ Žaisti</span>
                             </div>
                         </a>`;
                 }).join('');
@@ -320,13 +323,27 @@
                 grid.innerHTML = `
                     <div class="empty-state">
                         <span class="emoji">🔧</span>
-                        <p>Couldn't load games. Make sure <code>games/games.json</code> exists!</p>
+                        <p>Nepavyko užkrauti žaidimų. Patikrink, ar yra <code>games/games.json</code>!</p>
                     </div>`;
                 counter.textContent = 'Error';
             }
         }
 
         loadGames();
+
+        // Generate Apple touch icon from emoji
+        (function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 180; canvas.height = 180;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, 180, 180);
+            ctx.font = '140px serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🎮', 90, 100);
+            document.getElementById('appleTouchIcon').href = canvas.toDataURL('image/png');
+        })();
     </script>
 </body>
 </html>

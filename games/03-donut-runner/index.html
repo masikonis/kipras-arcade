@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🍩 Bėganti Spurga</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <script>
+    // ============================================
+    //  🍩 BĖGANTI SPURGA (Running Donut)
+    //  Run through candy land, collect sweets,
+    //  dodge the hungry teeth!
+    // ============================================
+
+    const GAME_WIDTH = 480;
+    const GAME_HEIGHT = 640;
+
+    // --- MENU SCENE ---
+    class MenuScene extends Phaser.Scene {
+        constructor() { super('MenuScene'); }
+
+        create() {
+            // Candy land background
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x4a1942, 0x4a1942, 0xe84393, 0xe84393);
+            bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Floating candy decorations
+            const candies = ['🍬', '🍭', '🍫', '🧁', '🍪', '🎂', '🍰'];
+            for (let i = 0; i < 20; i++) {
+                const candy = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(0, GAME_HEIGHT),
+                    Phaser.Utils.Array.GetRandom(candies),
+                    { fontSize: Phaser.Math.Between(16, 32) + 'px' }
+                ).setAlpha(0.3);
+                this.tweens.add({
+                    targets: candy,
+                    y: candy.y + Phaser.Math.Between(-30, 30),
+                    angle: Phaser.Math.Between(-20, 20),
+                    duration: Phaser.Math.Between(2000, 4000),
+                    yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+                });
+            }
+
+            // Title donut
+            this.add.text(GAME_WIDTH / 2, 150, '🍩', { fontSize: '100px' })
+                .setOrigin(0.5);
+
+            // Title
+            this.add.text(GAME_WIDTH / 2, 270, 'BĖGANTI\nSPURGA', {
+                fontSize: '52px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffb8d0',
+                align: 'center', lineSpacing: 8,
+                stroke: '#4a1942', strokeThickness: 4
+            }).setOrigin(0.5);
+
+            // Subtitle
+            this.add.text(GAME_WIDTH / 2, 340, 'Saldainių šalyje! 🍬', {
+                fontSize: '20px', fontFamily: 'Arial',
+                color: '#ffe66d'
+            }).setOrigin(0.5);
+
+            // Play button
+            const btn = this.add.rectangle(GAME_WIDTH / 2, 440, 220, 65, 0xff6b9d, 1)
+                .setInteractive({ useHandCursor: true });
+            btn.setStrokeStyle(3, 0xffffff, 0.4);
+
+            const btnText = this.add.text(GAME_WIDTH / 2, 440, '▶  BĖGTI!', {
+                fontSize: '26px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff'
+            }).setOrigin(0.5);
+
+            btn.on('pointerover', () => { btn.setFillStyle(0xff8db5); btn.setScale(1.05); btnText.setScale(1.05); });
+            btn.on('pointerout', () => { btn.setFillStyle(0xff6b9d); btn.setScale(1); btnText.setScale(1); });
+            btn.on('pointerdown', () => this.scene.start('GameScene'));
+
+            // Instructions
+            this.add.text(GAME_WIDTH / 2, 540, 'Spausk ekraną arba TARPO klavišą\nkad šoktum! 🦘\nRink saldainius 🍬 — Venk dantų 🦷', {
+                fontSize: '14px', fontFamily: 'Arial',
+                color: '#c8a0d0', align: 'center', lineSpacing: 6
+            }).setOrigin(0.5);
+        }
+    }
+
+    // --- GAME SCENE ---
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        create() {
+            this.score = 0;
+            this.lives = 3;
+            this.distance = 0;
+            this.gameSpeed = 3;
+            this.gameOver = false;
+            this.magnetActive = false;
+            this.magnetTimer = 0;
+            this.invincible = false;
+            this.difficultyLevel = 0;
+            this.toothSizeMultiplier = 1;
+
+            // Sky gradient background
+            this.bgGraphics = this.add.graphics();
+            this.drawBackground();
+
+            // Scrolling background layers (parallax)
+            this.bgCandies = [];
+            for (let i = 0; i < 12; i++) {
+                const candies = ['🍬', '🍭', '🍫', '🧁', '🍪'];
+                const candy = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(60, GAME_HEIGHT - 150),
+                    Phaser.Utils.Array.GetRandom(candies),
+                    { fontSize: Phaser.Math.Between(12, 20) + 'px' }
+                ).setAlpha(0.15);
+                candy.setData('speed', Math.random() * 0.5 + 0.3);
+                this.bgCandies.push(candy);
+            }
+
+            // Ground
+            this.groundY = GAME_HEIGHT - 80;
+            this.groundTiles = [];
+            for (let x = 0; x < GAME_WIDTH + 80; x += 40) {
+                const tile = this.add.rectangle(x, this.groundY + 20, 40, 60, 0xd63031);
+                tile.setStrokeStyle(1, 0xe17055, 0.5);
+                this.groundTiles.push(tile);
+            }
+            // Frosting on top of ground
+            this.frostingTiles = [];
+            for (let x = 0; x < GAME_WIDTH + 80; x += 40) {
+                const frost = this.add.ellipse(x, this.groundY - 5, 50, 20, 0xffb8d0);
+                this.frostingTiles.push(frost);
+            }
+
+            // Static ground for physics
+            this.ground = this.add.rectangle(GAME_WIDTH / 2, this.groundY + 10, GAME_WIDTH, 20, 0xd63031, 0);
+            this.physics.world.enable(this.ground, Phaser.Physics.Arcade.STATIC_BODY);
+
+            // Player (donut!)
+            this.player = this.add.container(80, this.groundY - 30);
+            // Donut body
+            const donutEmoji = this.add.text(0, 0, '🍩', { fontSize: '48px' }).setOrigin(0.5);
+            this.player.add(donutEmoji);
+            this.player.setSize(36, 36);
+            this.physics.world.enable(this.player);
+            this.player.body.setCollideWorldBounds(true);
+            this.player.body.setBounce(0.1);
+            this.player.body.setGravityY(800);
+
+            // Collide player with ground
+            this.physics.add.collider(this.player, this.ground);
+
+            // Groups
+            this.teeth = this.physics.add.group();
+            this.candyItems = this.physics.add.group();
+            this.magnets = this.physics.add.group();
+
+            // Collisions
+            this.physics.add.overlap(this.player, this.candyItems, this.collectCandy, null, this);
+            this.physics.add.overlap(this.player, this.magnets, this.collectMagnet, null, this);
+            this.physics.add.overlap(this.player, this.teeth, this.hitTooth, null, this);
+
+            // Spawn timers
+            this.toothTimer = this.time.addEvent({
+                delay: 1800,
+                callback: this.spawnTooth,
+                callbackScope: this,
+                loop: true
+            });
+
+            this.candyTimer = this.time.addEvent({
+                delay: 900,
+                callback: this.spawnCandy,
+                callbackScope: this,
+                loop: true
+            });
+
+            this.magnetSpawnTimer = this.time.addEvent({
+                delay: 12000,
+                callback: this.spawnMagnet,
+                callbackScope: this,
+                loop: true
+            });
+
+            // Difficulty ramp
+            this.time.addEvent({
+                delay: 6000,
+                callback: () => {
+                    if (this.gameOver) return;
+                    this.difficultyLevel++;
+                    // Speed up
+                    this.gameSpeed = Math.min(8, this.gameSpeed + 0.4);
+                    // More teeth (shorter delay)
+                    this.toothTimer.delay = Math.max(600, 1800 - this.difficultyLevel * 100);
+                    // Bigger teeth
+                    this.toothSizeMultiplier = Math.min(1.8, 1 + this.difficultyLevel * 0.08);
+
+                    // Flash warning
+                    if (this.difficultyLevel % 2 === 0) {
+                        const warn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '⚠️ GREIČIAU! ⚠️', {
+                            fontSize: '28px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#ffe66d'
+                        }).setOrigin(0.5).setAlpha(0);
+                        this.tweens.add({
+                            targets: warn, alpha: 1, y: warn.y - 30,
+                            duration: 400, yoyo: true, hold: 600,
+                            onComplete: () => warn.destroy()
+                        });
+                    }
+                },
+                loop: true
+            });
+
+            // UI
+            this.scoreText = this.add.text(16, 16, 'Taškai: 0', {
+                fontSize: '22px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffe66d',
+                stroke: '#000', strokeThickness: 2
+            });
+
+            this.livesText = this.add.text(GAME_WIDTH - 16, 16, '❤️❤️❤️', {
+                fontSize: '20px', fontFamily: 'Arial'
+            }).setOrigin(1, 0);
+
+            this.distanceText = this.add.text(16, 44, '📏 0m', {
+                fontSize: '16px', fontFamily: 'Arial',
+                color: '#c8a0d0', stroke: '#000', strokeThickness: 2
+            });
+
+            this.magnetIndicator = this.add.text(GAME_WIDTH / 2, 50, '', {
+                fontSize: '18px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#00ff88',
+                stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5);
+
+            // Input — tap/click to jump
+            this.input.on('pointerdown', () => this.jump());
+            this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            this.upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+
+            // Running animation for donut
+            this.tweens.add({
+                targets: this.player,
+                angle: 360,
+                duration: 800,
+                repeat: -1,
+                ease: 'Linear'
+            });
+        }
+
+        drawBackground() {
+            this.bgGraphics.clear();
+            this.bgGraphics.fillGradientStyle(0x4a1942, 0x4a1942, 0x6c2d82, 0x6c2d82);
+            this.bgGraphics.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            // Clouds
+            this.bgGraphics.fillStyle(0xffc0cb, 0.15);
+            this.bgGraphics.fillCircle(100, 100, 50);
+            this.bgGraphics.fillCircle(140, 90, 40);
+            this.bgGraphics.fillCircle(60, 95, 35);
+            this.bgGraphics.fillCircle(350, 130, 45);
+            this.bgGraphics.fillCircle(390, 120, 35);
+            this.bgGraphics.fillCircle(320, 125, 30);
+        }
+
+        jump() {
+            if (this.gameOver) return;
+            // Allow jump only if on ground (or close to it)
+            if (this.player.body.blocked.down || this.player.body.touching.down) {
+                this.player.body.setVelocityY(-450);
+                // Jump squish effect
+                this.tweens.add({
+                    targets: this.player,
+                    scaleX: 0.8, scaleY: 1.2,
+                    duration: 100, yoyo: true
+                });
+            }
+        }
+
+        spawnTooth() {
+            if (this.gameOver) return;
+
+            const isJumping = Math.random() < 0.25; // 25% flying teeth
+            const y = isJumping ? this.groundY - Phaser.Math.Between(80, 160) : this.groundY - 20;
+            const size = Math.floor(28 * this.toothSizeMultiplier);
+
+            const tooth = this.add.text(GAME_WIDTH + 30, y, '🦷', {
+                fontSize: size + 'px'
+            }).setOrigin(0.5);
+
+            this.teeth.add(tooth);
+            this.physics.world.enable(tooth);
+            tooth.body.setAllowGravity(false);
+            tooth.body.setVelocityX(-this.gameSpeed * 55);
+            tooth.body.setSize(size * 0.7, size * 0.7);
+
+            // Wobble animation for teeth
+            this.tweens.add({
+                targets: tooth,
+                angle: { from: -10, to: 10 },
+                duration: 300, yoyo: true, repeat: -1
+            });
+
+            // Funny teeth occasionally have a chomping effect
+            if (Math.random() < 0.3) {
+                this.tweens.add({
+                    targets: tooth,
+                    scaleX: 1.2, scaleY: 0.8,
+                    duration: 200, yoyo: true, repeat: -1
+                });
+            }
+        }
+
+        spawnCandy() {
+            if (this.gameOver) return;
+
+            const candyTypes = ['🍬', '🍭', '🍫', '🧁', '🍪'];
+            const y = Phaser.Math.Between(this.groundY - 200, this.groundY - 50);
+
+            const candy = this.add.text(GAME_WIDTH + 20, y,
+                Phaser.Utils.Array.GetRandom(candyTypes),
+                { fontSize: '28px' }
+            ).setOrigin(0.5);
+
+            this.candyItems.add(candy);
+            this.physics.world.enable(candy);
+            candy.body.setAllowGravity(false);
+            candy.body.setVelocityX(-this.gameSpeed * 50);
+            candy.body.setSize(24, 24);
+
+            // Float animation
+            this.tweens.add({
+                targets: candy,
+                y: candy.y + Phaser.Math.Between(-15, 15),
+                duration: Phaser.Math.Between(800, 1200),
+                yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+        }
+
+        spawnMagnet() {
+            if (this.gameOver || this.magnetActive) return;
+
+            const magnet = this.add.text(GAME_WIDTH + 20,
+                Phaser.Math.Between(this.groundY - 180, this.groundY - 60),
+                '🧲', { fontSize: '32px' }
+            ).setOrigin(0.5);
+
+            this.magnets.add(magnet);
+            this.physics.world.enable(magnet);
+            magnet.body.setAllowGravity(false);
+            magnet.body.setVelocityX(-this.gameSpeed * 50);
+            magnet.body.setSize(28, 28);
+
+            // Glow effect
+            this.tweens.add({
+                targets: magnet,
+                scale: { from: 1, to: 1.3 },
+                duration: 500, yoyo: true, repeat: -1
+            });
+        }
+
+        collectCandy(player, candy) {
+            this.score += 10;
+            this.scoreText.setText('Taškai: ' + this.score);
+
+            // Sweet particle burst
+            for (let i = 0; i < 5; i++) {
+                const p = this.add.text(
+                    candy.x + Phaser.Math.Between(-10, 10),
+                    candy.y + Phaser.Math.Between(-10, 10),
+                    '✨', { fontSize: '14px' }
+                );
+                this.tweens.add({
+                    targets: p,
+                    x: p.x + Phaser.Math.Between(-30, 30),
+                    y: p.y - Phaser.Math.Between(20, 50),
+                    alpha: 0, duration: 400,
+                    onComplete: () => p.destroy()
+                });
+            }
+
+            // Score popup
+            const popup = this.add.text(candy.x, candy.y - 10, '+10', {
+                fontSize: '18px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffe66d',
+                stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5);
+            this.tweens.add({
+                targets: popup, y: popup.y - 40, alpha: 0,
+                duration: 600, onComplete: () => popup.destroy()
+            });
+
+            candy.destroy();
+        }
+
+        collectMagnet(player, magnet) {
+            magnet.destroy();
+            this.magnetActive = true;
+            this.magnetTimer = 5000; // 5 seconds
+
+            // Flash effect
+            this.cameras.main.flash(200, 0, 255, 100);
+
+            // Announcement
+            const txt = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '🧲 MAGNETAS! 🧲', {
+                fontSize: '32px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#00ff88',
+                stroke: '#000', strokeThickness: 3
+            }).setOrigin(0.5).setAlpha(0);
+            this.tweens.add({
+                targets: txt, alpha: 1, scale: 1.2,
+                duration: 300, yoyo: true, hold: 500,
+                onComplete: () => txt.destroy()
+            });
+        }
+
+        hitTooth(player, tooth) {
+            if (this.invincible || this.gameOver) return;
+
+            tooth.destroy();
+            this.lives--;
+            this.livesText.setText('❤️'.repeat(Math.max(0, this.lives)));
+
+            // Screen shake + red flash
+            this.cameras.main.shake(300, 0.03);
+            this.cameras.main.flash(200, 255, 0, 0, true);
+
+            // Invincibility frames
+            this.invincible = true;
+            this.tweens.add({
+                targets: this.player,
+                alpha: 0.3, duration: 100,
+                yoyo: true, repeat: 8,
+                onComplete: () => {
+                    this.invincible = false;
+                    this.player.setAlpha(1);
+                }
+            });
+
+            // Ouch text
+            const ouch = this.add.text(player.x, player.y - 30,
+                Phaser.Utils.Array.GetRandom(['AU! 😫', 'OI! 😬', 'NE! 😱']),
+                { fontSize: '22px', fontFamily: 'Arial', fontStyle: 'bold', color: '#ff6b6b',
+                  stroke: '#000', strokeThickness: 2 }
+            ).setOrigin(0.5);
+            this.tweens.add({
+                targets: ouch, y: ouch.y - 50, alpha: 0,
+                duration: 800, onComplete: () => ouch.destroy()
+            });
+
+            if (this.lives <= 0) {
+                this.endGame();
+            }
+        }
+
+        update(time, delta) {
+            if (this.gameOver) return;
+
+            // Jump input
+            if (Phaser.Input.Keyboard.JustDown(this.spaceKey) || Phaser.Input.Keyboard.JustDown(this.upKey)) {
+                this.jump();
+            }
+
+            // Distance tracking
+            this.distance += this.gameSpeed * delta * 0.01;
+            this.distanceText.setText('📏 ' + Math.floor(this.distance) + 'm');
+
+            // Score from distance
+            if (Math.floor(this.distance) % 10 === 0 && Math.floor(this.distance) > 0) {
+                this.score = Math.max(this.score, Math.floor(this.distance));
+            }
+
+            // Scroll background candies
+            this.bgCandies.forEach(candy => {
+                candy.x -= this.gameSpeed * candy.getData('speed');
+                if (candy.x < -30) {
+                    candy.x = GAME_WIDTH + 30;
+                    candy.y = Phaser.Math.Between(60, GAME_HEIGHT - 150);
+                }
+            });
+
+            // Scroll ground tiles
+            this.groundTiles.forEach(tile => {
+                tile.x -= this.gameSpeed;
+                if (tile.x < -40) tile.x += GAME_WIDTH + 80;
+            });
+            this.frostingTiles.forEach(tile => {
+                tile.x -= this.gameSpeed;
+                if (tile.x < -40) tile.x += GAME_WIDTH + 80;
+            });
+
+            // Magnet effect — attract candies toward player
+            if (this.magnetActive) {
+                this.magnetTimer -= delta;
+                this.magnetIndicator.setText('🧲 ' + Math.ceil(this.magnetTimer / 1000) + 's');
+
+                this.candyItems.getChildren().forEach(candy => {
+                    if (!candy.body) return;
+                    const dx = this.player.x - candy.x;
+                    const dy = this.player.y - candy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 200) {
+                        const force = 300 / Math.max(dist, 30);
+                        candy.body.setVelocityX(candy.body.velocity.x + dx * force * 0.1);
+                        candy.body.setVelocityY(candy.body.velocity.y + dy * force * 0.1);
+                    }
+                });
+
+                if (this.magnetTimer <= 0) {
+                    this.magnetActive = false;
+                    this.magnetIndicator.setText('');
+                }
+            }
+
+            // Clean up off-screen objects
+            this.teeth.getChildren().forEach(t => {
+                if (t.x < -50) t.destroy();
+            });
+            this.candyItems.getChildren().forEach(c => {
+                if (c.x < -50) c.destroy();
+            });
+            this.magnets.getChildren().forEach(m => {
+                if (m.x < -50) m.destroy();
+            });
+        }
+
+        endGame() {
+            this.gameOver = true;
+            this.physics.pause();
+            this.toothTimer.remove();
+            this.candyTimer.remove();
+            this.magnetSpawnTimer.remove();
+
+            // Stop donut rotation
+            this.tweens.killTweensOf(this.player);
+
+            // Darken
+            const overlay = this.add.rectangle(
+                GAME_WIDTH / 2, GAME_HEIGHT / 2,
+                GAME_WIDTH, GAME_HEIGHT, 0x000000, 0
+            );
+            this.tweens.add({ targets: overlay, fillAlpha: 0.75, duration: 500 });
+
+            this.time.delayedCall(400, () => {
+                // Big sad donut
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 130, '🍩💀', {
+                    fontSize: '60px'
+                }).setOrigin(0.5);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, 'SUVALGĖ!', {
+                    fontSize: '46px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ff6b6b',
+                    stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10, `Taškai: ${this.score}`, {
+                    fontSize: '28px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffe66d',
+                    stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, `📏 ${Math.floor(this.distance)}m nubėgta!`, {
+                    fontSize: '20px', fontFamily: 'Arial',
+                    color: '#c8a0d0', stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5);
+
+                // Retry button
+                const btn = this.add.rectangle(
+                    GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110,
+                    200, 55, 0xff6b9d
+                ).setInteractive({ useHandCursor: true });
+                btn.setStrokeStyle(2, 0xffffff, 0.4);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 110, '🔄 DAR KARTĄ!', {
+                    fontSize: '20px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff'
+                }).setOrigin(0.5);
+
+                btn.on('pointerover', () => btn.setFillStyle(0xff8db5));
+                btn.on('pointerout', () => btn.setFillStyle(0xff6b9d));
+                btn.on('pointerdown', () => this.scene.start('GameScene'));
+
+                // Menu button
+                const menuBtn = this.add.rectangle(
+                    GAME_WIDTH / 2, GAME_HEIGHT / 2 + 175,
+                    200, 50, 0x4a1942
+                ).setInteractive({ useHandCursor: true });
+                menuBtn.setStrokeStyle(1, 0xff6b9d, 0.5);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 175, '🏠 MENIU', {
+                    fontSize: '18px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ff6b9d'
+                }).setOrigin(0.5);
+
+                menuBtn.on('pointerdown', () => this.scene.start('MenuScene'));
+            });
+        }
+    }
+
+    // --- LAUNCH GAME ---
+    const config = {
+        type: Phaser.AUTO,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        parent: 'game-container',
+        backgroundColor: '#4a1942',
+        physics: {
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: [MenuScene, GameScene],
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: GAME_WIDTH,
+            height: GAME_HEIGHT
+        }
+    };
+
+    const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>

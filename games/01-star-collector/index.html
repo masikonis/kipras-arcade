@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⭐ Star Collector</title>
+    <title>⭐ Žvaigždžių rinkėjas</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -15,9 +15,8 @@
             font-family: Arial, sans-serif;
         }
         #game-container {
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 0 40px rgba(78, 205, 196, 0.2);
+            width: 100vw;
+            height: 100vh;
         }
     </style>
 </head>
@@ -63,7 +62,7 @@
             this.add.text(GAME_WIDTH / 2, 180, '⭐', { fontSize: '80px' })
                 .setOrigin(0.5);
 
-            this.add.text(GAME_WIDTH / 2, 280, 'STAR\nCOLLECTOR', {
+            this.add.text(GAME_WIDTH / 2, 280, 'ŽVAIGŽDŽIŲ\nRINKĖJAS', {
                 fontSize: '48px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#ffe66d',
                 align: 'center', lineSpacing: 8
@@ -74,7 +73,7 @@
                 .setInteractive({ useHandCursor: true });
             btn.setStrokeStyle(2, 0xffffff, 0.3);
 
-            const btnText = this.add.text(GAME_WIDTH / 2, 420, '▶  PLAY', {
+            const btnText = this.add.text(GAME_WIDTH / 2, 420, '▶  ŽAISTI', {
                 fontSize: '24px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#0a0a2e'
             }).setOrigin(0.5);
@@ -93,7 +92,7 @@
             btn.on('pointerdown', () => this.scene.start('GameScene'));
 
             // Instructions
-            this.add.text(GAME_WIDTH / 2, 520, 'Arrow keys or touch to move\nCatch stars ⭐ — Avoid bombs 💣', {
+            this.add.text(GAME_WIDTH / 2, 520, 'Rodyklės arba liesti ekraną\nRink žvaigždes ⭐ — Venk bombų 💣', {
                 fontSize: '14px', fontFamily: 'Arial',
                 color: '#8888aa', align: 'center', lineSpacing: 6
             }).setOrigin(0.5);
@@ -153,7 +152,7 @@
             this.physics.add.overlap(this.player, this.items, this.collectItem, null, this);
 
             // UI
-            this.scoreText = this.add.text(16, 16, 'Score: 0', {
+            this.scoreText = this.add.text(16, 16, 'Taškai: 0', {
                 fontSize: '22px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#ffe66d'
             });
@@ -165,15 +164,20 @@
             // Input
             this.cursors = this.input.keyboard.createCursorKeys();
 
-            // Touch/mouse controls
+            // Touch/mouse controls — drag anywhere to move
             this.input.on('pointermove', (pointer) => {
                 if (!this.gameOver && pointer.isDown) {
-                    this.player.x = Phaser.Math.Clamp(pointer.x, 22, GAME_WIDTH - 22);
+                    this.player.body.setVelocityX((pointer.x - this.player.x) * 8);
                 }
             });
             this.input.on('pointerdown', (pointer) => {
                 if (!this.gameOver) {
-                    this.player.x = Phaser.Math.Clamp(pointer.x, 22, GAME_WIDTH - 22);
+                    this.player.body.setVelocityX((pointer.x - this.player.x) * 8);
+                }
+            });
+            this.input.on('pointerup', () => {
+                if (!this.gameOver && !this.cursors.left.isDown && !this.cursors.right.isDown) {
+                    this.player.body.setVelocityX(0);
                 }
             });
 
@@ -228,7 +232,7 @@
 
             if (type === 'star') {
                 this.score += 10;
-                this.scoreText.setText('Score: ' + this.score);
+                this.scoreText.setText('Taškai: ' + this.score);
 
                 // Sparkle effect
                 for (let i = 0; i < 6; i++) {
@@ -307,12 +311,12 @@
 
             // Game over text
             this.time.delayedCall(300, () => {
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'GAME OVER', {
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'ŽAIDIMAS BAIGTAS', {
                     fontSize: '42px', fontFamily: 'Arial',
                     fontStyle: 'bold', color: '#ff6b6b'
                 }).setOrigin(0.5);
 
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `Score: ${this.score}`, {
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `Taškai: ${this.score}`, {
                     fontSize: '28px', fontFamily: 'Arial',
                     fontStyle: 'bold', color: '#ffe66d'
                 }).setOrigin(0.5);
@@ -323,7 +327,7 @@
                     180, 50, 0x4ecdc4
                 ).setInteractive({ useHandCursor: true });
 
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70, '🔄 PLAY AGAIN', {
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70, '🔄 IŠ NAUJO', {
                     fontSize: '18px', fontFamily: 'Arial',
                     fontStyle: 'bold', color: '#0a0a2e'
                 }).setOrigin(0.5);
@@ -339,7 +343,7 @@
                 ).setInteractive({ useHandCursor: true });
                 menuBtn.setStrokeStyle(1, 0x4ecdc4, 0.5);
 
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, '🏠 MENU', {
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 130, '🏠 MENIU', {
                     fontSize: '18px', fontFamily: 'Arial',
                     fontStyle: 'bold', color: '#4ecdc4'
                 }).setOrigin(0.5);
@@ -363,7 +367,9 @@
         scene: [MenuScene, GameScene],
         scale: {
             mode: Phaser.Scale.FIT,
-            autoCenter: Phaser.Scale.CENTER_BOTH
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: GAME_WIDTH,
+            height: GAME_HEIGHT
         }
     };
 
