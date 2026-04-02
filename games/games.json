@@ -1,0 +1,10 @@
+[
+  {
+    "id": "01-star-collector",
+    "title": "Star Collector",
+    "description": "Move your character to collect falling stars before they hit the ground!",
+    "emoji": "⭐",
+    "color": "#1a1a2e",
+    "added": "2026-04-02"
+  }
+]
