@@ -119,6 +119,27 @@ When Kipras says "what should I build?" or seems unsure, guide him through a fun
 - After building, suggest ONE specific thing to add next: "Want me to add a boss enemy? 👹"
 - Never ask "are you sure?" — just go with his choices
 
+## Lessons Learned (from reviewing games 01–03)
+
+### CSS & Touch
+- **Always add `touch-action: none` to body CSS** — prevents accidental browser gestures (pinch, long-press) from interfering with gameplay. Game 01 is missing this.
+- **Touch and keyboard velocity must match** — don't use `pointer.x * 8` for touch and `±350` for keyboard; pick one movement model and apply it to both inputs.
+
+### UI & Buttons
+- **Minimum button size: 220×55px** for play/retry/menu buttons — smaller is hard to tap on iPad.
+- **50px+ vertical spacing** between UI rows (stats, buttons, grid) — elements overlap on iPad when packed tightly.
+- **Use emoji for particle effects** (✨🌟) instead of drawn circles — matches the game art style and is simpler.
+
+### Phaser Gotchas
+- **`textures.addCanvas()` stores a reference, not a copy** — if you reuse one canvas to generate multiple textures, they'll all show the last thing drawn. Create a new canvas element per texture.
+- **Stop timers on win/game-over immediately** — don't let them tick during celebration animations.
+- **Set physics gravity consistently** — either use world gravity (`physics.arcade.gravity.y`) or per-object gravity (`body.setGravityY()`), not a mix of both across games.
+
+### Game Feel
+- **Show visual feedback when difficulty increases** — a brief "⚠️ GREIČIAU!" or "Level Up!" text makes ramping feel fair instead of sneaky. Donut Runner does this well.
+- **Power-ups (magnet, shield, speed) make games more engaging** — even simple catch/dodge games benefit from occasional power-up drops.
+- **Game-over flow pattern that works**: disable physics → darken screen (tween) → show stats after short delay → retry + menu buttons. All three games use this and it feels polished.
+
 ## Response Style
 - Keep explanations to 1-2 sentences max
 - Talk to Kipras like a friend, not a teacher

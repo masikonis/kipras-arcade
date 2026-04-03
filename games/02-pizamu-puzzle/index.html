@@ -136,29 +136,39 @@
             bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
             // Title
-            this.add.text(GAME_WIDTH / 2, 24, '🧩 Pižamų dienos Puzzle', {
+            this.add.text(GAME_WIDTH / 2, 18, '🧩 Pižamų dienos Puzzle', {
                 fontSize: '22px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#ffe66d'
             }).setOrigin(0.5);
 
-            // UI
-            this.movesText = this.add.text(16, 60, 'Ėjimai: 0', {
+            // UI - stats row
+            this.movesText = this.add.text(16, 48, 'Ėjimai: 0', {
                 fontSize: '18px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#4ecdc4'
             });
 
-            this.timeText = this.add.text(GAME_WIDTH - 16, 60, 'Laikas: 0:00', {
+            this.timeText = this.add.text(GAME_WIDTH - 16, 48, 'Laikas: 0:00', {
                 fontSize: '18px', fontFamily: 'Arial',
                 fontStyle: 'bold', color: '#4ecdc4'
             }).setOrigin(1, 0);
 
-            // Hint button
-            const hintBtn = this.add.rectangle(GAME_WIDTH / 2, 90, 140, 32, 0x2a2a4e)
+            // Buttons row
+            const btnY = 100;
+            const hintBtn = this.add.rectangle(GAME_WIDTH / 2 - 80, btnY, 140, 32, 0x2a2a4e)
                 .setInteractive({ useHandCursor: true });
             hintBtn.setStrokeStyle(1, 0x4ecdc4, 0.4);
-            this.add.text(GAME_WIDTH / 2, 90, '👁️ Paveikslėlis', {
+            this.add.text(GAME_WIDTH / 2 - 80, btnY, '👁️ Paveikslėlis', {
                 fontSize: '13px', fontFamily: 'Arial', color: '#8888aa'
             }).setOrigin(0.5);
+
+            // Auto-solve button
+            const solveBtn = this.add.rectangle(GAME_WIDTH / 2 + 80, btnY, 140, 32, 0x2a2a4e)
+                .setInteractive({ useHandCursor: true });
+            solveBtn.setStrokeStyle(1, 0xffe66d, 0.4);
+            this.add.text(GAME_WIDTH / 2 + 80, btnY, '✨ Sudėti', {
+                fontSize: '13px', fontFamily: 'Arial', color: '#ffe66d'
+            }).setOrigin(0.5);
+            solveBtn.on('pointerdown', () => this.autoSolve());
 
             // Hint overlay (hidden)
             this.hintOverlay = this.add.image(
@@ -209,28 +219,27 @@
             const photo = this.textures.get('photo').getSourceImage();
             const n = this.gridSize;
 
-            // Create a canvas to crop photo to square and slice
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+            // Crop photo to square and slice into tiles
             const cropSize = Math.min(photo.width, photo.height);
             const sx = (photo.width - cropSize) / 2;
             const sy = (photo.height - cropSize) / 2;
 
-            // Create individual tile textures
+            // Create individual tile textures (each needs its own canvas)
             const tilePx = Math.floor(cropSize / n);
-            canvas.width = tilePx;
-            canvas.height = tilePx;
 
             for (let row = 0; row < n; row++) {
                 for (let col = 0; col < n; col++) {
-                    ctx.clearRect(0, 0, tilePx, tilePx);
-                    ctx.drawImage(photo,
+                    const tileCanvas = document.createElement('canvas');
+                    const tileCtx = tileCanvas.getContext('2d');
+                    tileCanvas.width = tilePx;
+                    tileCanvas.height = tilePx;
+                    tileCtx.drawImage(photo,
                         sx + col * tilePx, sy + row * tilePx, tilePx, tilePx,
                         0, 0, tilePx, tilePx
                     );
                     const key = `tile_${row}_${col}`;
                     if (this.textures.exists(key)) this.textures.remove(key);
-                    this.textures.addCanvas(key, canvas);
+                    this.textures.addCanvas(key, tileCanvas);
                 }
             }
 
@@ -344,6 +353,66 @@
             }
         }
 
+        autoSolve() {
+            if (this.solved || this.solving) return;
+            this.solving = true;
+            this.autoSolved = true;
+            const n = this.gridSize;
+
+            // Snap all tiles to their correct positions with a staggered animation
+            let delay = 0;
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) {
+                    if (r === n - 1 && c === n - 1) continue;
+
+                    // Find which tile belongs at (r, c)
+                    let foundR = -1, foundC = -1;
+                    for (let gr = 0; gr < n; gr++) {
+                        for (let gc = 0; gc < n; gc++) {
+                            const d = this.grid[gr][gc];
+                            if (d && d.row === r && d.col === c) {
+                                foundR = gr; foundC = gc;
+                            }
+                        }
+                    }
+
+                    if (foundR === -1) continue;
+                    const tile = this.tiles[foundR][foundC];
+                    if (!tile) continue;
+
+                    const targetX = this.gridX + c * (this.tileSize + TILE_GAP) + this.tileSize / 2;
+                    const targetY = this.gridY + r * (this.tileSize + TILE_GAP) + this.tileSize / 2;
+
+                    this.tweens.add({
+                        targets: tile,
+                        x: targetX, y: targetY,
+                        duration: 300,
+                        delay: delay,
+                        ease: 'Back.easeOut'
+                    });
+                    delay += 60;
+                }
+            }
+
+            // Update grid state to solved and trigger win
+            this.time.delayedCall(delay + 350, () => {
+                // Reset grid to solved state
+                for (let r = 0; r < n; r++) {
+                    for (let c = 0; c < n; c++) {
+                        if (r === n - 1 && c === n - 1) {
+                            this.grid[r][c] = null;
+                            this.tiles[r][c] = null;
+                        } else {
+                            this.grid[r][c] = { row: r, col: c };
+                        }
+                    }
+                }
+                this.emptyRow = n - 1;
+                this.emptyCol = n - 1;
+                this.checkWin();
+            });
+        }
+
         checkWin() {
             const n = this.gridSize;
             for (let r = 0; r < n; r++) {
@@ -379,20 +448,32 @@
                 this.tweens.add({ targets: overlay, fillAlpha: 0.7, duration: 500 });
 
                 this.time.delayedCall(400, () => {
-                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '🎉 SUDĖTA!', {
-                        fontSize: '40px', fontFamily: 'Arial',
-                        fontStyle: 'bold', color: '#ffe66d'
-                    }).setOrigin(0.5);
+                    if (this.autoSolved) {
+                        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, '✨ SUDĖTA!', {
+                            fontSize: '40px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#ffe66d'
+                        }).setOrigin(0.5);
 
-                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20, `Ėjimai: ${this.moves}`, {
-                        fontSize: '24px', fontFamily: 'Arial',
-                        fontStyle: 'bold', color: '#4ecdc4'
-                    }).setOrigin(0.5);
+                        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'Kitą kartą pabandyk pats! 💪', {
+                            fontSize: '20px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#8888aa'
+                        }).setOrigin(0.5);
+                    } else {
+                        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '🎉 SUDĖTA!', {
+                            fontSize: '40px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#ffe66d'
+                        }).setOrigin(0.5);
 
-                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20, `Laikas: ${timeStr}`, {
-                        fontSize: '24px', fontFamily: 'Arial',
-                        fontStyle: 'bold', color: '#4ecdc4'
-                    }).setOrigin(0.5);
+                        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20, `Ėjimai: ${this.moves}`, {
+                            fontSize: '24px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#4ecdc4'
+                        }).setOrigin(0.5);
+
+                        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20, `Laikas: ${timeStr}`, {
+                            fontSize: '24px', fontFamily: 'Arial',
+                            fontStyle: 'bold', color: '#4ecdc4'
+                        }).setOrigin(0.5);
+                    }
 
                     // Play again
                     const btn = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 80, 200, 50, 0x4ecdc4)
