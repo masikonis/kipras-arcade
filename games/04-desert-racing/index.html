@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Dykumos Lenktynės 🏎️</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a2e;
+            overflow: hidden;
+            touch-action: none;
+            width: 100vw;
+            height: 100vh;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <script>
+    // === MENU SCENE ===
+    class MenuScene extends Phaser.Scene {
+        constructor() { super('MenuScene'); }
+
+        create() {
+            const w = this.cameras.main.width;
+            const h = this.cameras.main.height;
+
+            // Desert gradient background
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0xd4a574, 0xd4a574, 0x8B4513, 0x8B4513, 1);
+            bg.fillRect(0, 0, w, h);
+
+            // Title
+            this.add.text(w / 2, h * 0.15, '🏎️', { fontSize: '80px' }).setOrigin(0.5);
+            this.add.text(w / 2, h * 0.28, 'DYKUMOS\nLENKTYNĖS', {
+                fontSize: '42px', fontFamily: 'Arial Black, Arial',
+                color: '#ffffff', align: 'center',
+                stroke: '#8B4513', strokeThickness: 6
+            }).setOrigin(0.5);
+
+            // Decorative cacti
+            this.add.text(w * 0.15, h * 0.5, '🌵', { fontSize: '50px' }).setOrigin(0.5);
+            this.add.text(w * 0.85, h * 0.5, '🌵', { fontSize: '50px' }).setOrigin(0.5);
+            this.add.text(w * 0.3, h * 0.55, '🌵', { fontSize: '35px' }).setOrigin(0.5);
+            this.add.text(w * 0.7, h * 0.55, '🌵', { fontSize: '35px' }).setOrigin(0.5);
+
+            // Instructions
+            this.add.text(w / 2, h * 0.62, 'Venk kaktusų! 🌵\nRink turbo! 💨', {
+                fontSize: '22px', fontFamily: 'Arial',
+                color: '#fff8dc', align: 'center'
+            }).setOrigin(0.5);
+
+            // Play button
+            const btn = this.add.graphics();
+            btn.fillStyle(0xe74c3c, 1);
+            btn.fillRoundedRect(w / 2 - 120, h * 0.73, 240, 65, 16);
+            btn.lineStyle(3, 0xffffff, 0.8);
+            btn.strokeRoundedRect(w / 2 - 120, h * 0.73, 240, 65, 16);
+
+            const btnText = this.add.text(w / 2, h * 0.73 + 32, '🏁  VAŽIUOK!', {
+                fontSize: '28px', fontFamily: 'Arial Black, Arial',
+                color: '#ffffff'
+            }).setOrigin(0.5);
+
+            const btnZone = this.add.zone(w / 2, h * 0.73 + 32, 240, 65).setInteractive();
+            btnZone.on('pointerdown', () => this.scene.start('GameScene'));
+
+            // Pulse animation on button
+            this.tweens.add({
+                targets: btnText,
+                scaleX: 1.05, scaleY: 1.05,
+                duration: 600, yoyo: true, repeat: -1
+            });
+
+            // High score
+            const best = localStorage.getItem('desert-racing-best') || 0;
+            if (best > 0) {
+                this.add.text(w / 2, h * 0.88, `Rekordas: ${best} m`, {
+                    fontSize: '20px', fontFamily: 'Arial',
+                    color: '#ffd700'
+                }).setOrigin(0.5);
+            }
+        }
+    }
+
+    // === GAME SCENE ===
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        create() {
+            const w = this.cameras.main.width;
+            const h = this.cameras.main.height;
+
+            this.gameOver = false;
+            this.score = 0;
+            this.speed = 3;
+            this.turboActive = false;
+            this.turboTimer = 0;
+            this.lives = 3;
+            this.cactusSpawnRate = 1500;
+            this.lastCactusSpawn = 0;
+            this.lastTurboSpawn = 0;
+
+            // Road lanes
+            this.roadLeft = w * 0.15;
+            this.roadRight = w * 0.85;
+            this.roadWidth = this.roadRight - this.roadLeft;
+            this.lanes = [
+                this.roadLeft + this.roadWidth * 0.17,
+                this.roadLeft + this.roadWidth * 0.5,
+                this.roadLeft + this.roadWidth * 0.83
+            ];
+            this.currentLane = 1; // middle
+
+            // Draw desert background
+            this.bgGraphics = this.add.graphics();
+            this.drawBackground(w, h);
+
+            // Road markings group (animated lines)
+            this.roadLines = this.add.group();
+            for (let i = 0; i < 8; i++) {
+                const line = this.add.rectangle(w / 2, i * 90, 4, 40, 0xffffff, 0.5);
+                this.roadLines.add(line);
+            }
+
+            // Road edge lines
+            this.leftEdge = this.add.rectangle(this.roadLeft, h / 2, 4, h, 0xffffff, 0.8);
+            this.rightEdge = this.add.rectangle(this.roadRight, h / 2, 4, h, 0xffffff, 0.8);
+
+            // Car
+            this.car = this.add.text(this.lanes[1], h * 0.8, '🏎️', {
+                fontSize: '48px'
+            }).setOrigin(0.5);
+
+            // Obstacles group
+            this.cacti = [];
+            this.turbos = [];
+
+            // Score text
+            this.scoreText = this.add.text(w / 2, 20, '0 m', {
+                fontSize: '24px', fontFamily: 'Arial Black, Arial',
+                color: '#ffffff',
+                stroke: '#000000', strokeThickness: 3
+            }).setOrigin(0.5, 0);
+
+            // Lives
+            this.livesText = this.add.text(15, 20, '❤️❤️❤️', {
+                fontSize: '22px'
+            });
+
+            // Turbo indicator
+            this.turboText = this.add.text(w - 15, 20, '', {
+                fontSize: '20px', fontFamily: 'Arial',
+                color: '#00ffff'
+            }).setOrigin(1, 0);
+
+            // Speed indicator
+            this.speedText = this.add.text(w / 2, 50, '', {
+                fontSize: '16px', fontFamily: 'Arial',
+                color: '#ffd700'
+            }).setOrigin(0.5, 0);
+
+            // Touch controls - swipe detection
+            this.touchStartX = null;
+            this.input.on('pointerdown', (pointer) => {
+                this.touchStartX = pointer.x;
+            });
+            this.input.on('pointerup', (pointer) => {
+                if (this.touchStartX === null || this.gameOver) return;
+                const dx = pointer.x - this.touchStartX;
+                if (Math.abs(dx) > 30) {
+                    if (dx < 0) this.moveLane(-1);
+                    else this.moveLane(1);
+                }
+                this.touchStartX = null;
+            });
+
+            // Also support tap on left/right side of screen
+            this.input.on('pointerdown', (pointer) => {
+                if (this.gameOver) return;
+                const w = this.cameras.main.width;
+                if (pointer.x < w * 0.33) {
+                    this.moveLane(-1);
+                } else if (pointer.x > w * 0.67) {
+                    this.moveLane(1);
+                }
+            });
+
+            // Keyboard controls
+            this.cursors = this.input.keyboard.createCursorKeys();
+            this.keyLeftPressed = false;
+            this.keyRightPressed = false;
+
+            // Desert particles (sand)
+            this.sandParticles = [];
+        }
+
+        drawBackground(w, h) {
+            const bg = this.bgGraphics;
+            bg.clear();
+            // Sky
+            bg.fillGradientStyle(0x87CEEB, 0x87CEEB, 0xf4a460, 0xf4a460, 1);
+            bg.fillRect(0, 0, w, h * 0.3);
+            // Desert sand
+            bg.fillStyle(0xd4a574, 1);
+            bg.fillRect(0, h * 0.3, w, h * 0.7);
+            // Road
+            bg.fillStyle(0x333333, 1);
+            bg.fillRect(this.roadLeft, 0, this.roadWidth, h);
+            // Road shoulders
+            bg.fillStyle(0xc0392b, 1);
+            bg.fillRect(this.roadLeft - 8, 0, 8, h);
+            bg.fillRect(this.roadRight, 0, 8, h);
+        }
+
+        moveLane(dir) {
+            const newLane = Phaser.Math.Clamp(this.currentLane + dir, 0, 2);
+            if (newLane !== this.currentLane) {
+                this.currentLane = newLane;
+                this.tweens.add({
+                    targets: this.car,
+                    x: this.lanes[this.currentLane],
+                    duration: 120,
+                    ease: 'Power2'
+                });
+            }
+        }
+
+        spawnCactus() {
+            const lane = Phaser.Math.Between(0, 2);
+            const cactusEmojis = ['🌵', '🌵', '🪨', '🌵'];
+            const emoji = Phaser.Utils.Array.GetRandom(cactusEmojis);
+            const size = Phaser.Math.Between(32, 48);
+            const cactus = this.add.text(this.lanes[lane], -50, emoji, {
+                fontSize: `${size}px`
+            }).setOrigin(0.5);
+            cactus.lane = lane;
+            cactus.hitSize = size * 0.4;
+            this.cacti.push(cactus);
+        }
+
+        spawnTurbo() {
+            const lane = Phaser.Math.Between(0, 2);
+            const turbo = this.add.text(this.lanes[lane], -50, '💨', {
+                fontSize: '36px'
+            }).setOrigin(0.5);
+            turbo.lane = lane;
+            this.turbos.push(turbo);
+        }
+
+        update(time, delta) {
+            if (this.gameOver) return;
+
+            const h = this.cameras.main.height;
+            const baseSpeed = this.turboActive ? this.speed * 1.8 : this.speed;
+
+            // Score
+            this.score += Math.round(baseSpeed * 0.5);
+            this.scoreText.setText(`${this.score} m`);
+
+            // Gradually increase speed
+            this.speed = 3 + Math.floor(this.score / 500) * 0.5;
+
+            // Show speed
+            const kmh = Math.round(baseSpeed * 30);
+            this.speedText.setText(`${kmh} km/h`);
+
+            // Turbo timer
+            if (this.turboActive) {
+                this.turboTimer -= delta;
+                if (this.turboTimer <= 0) {
+                    this.turboActive = false;
+                    this.turboText.setText('');
+                    this.car.setScale(1);
+                } else {
+                    this.turboText.setText(`TURBO! ${Math.ceil(this.turboTimer / 1000)}s 🔥`);
+                }
+            }
+
+            // Keyboard
+            if (this.cursors.left.isDown && !this.keyLeftPressed) {
+                this.keyLeftPressed = true;
+                this.moveLane(-1);
+            }
+            if (this.cursors.left.isUp) this.keyLeftPressed = false;
+
+            if (this.cursors.right.isDown && !this.keyRightPressed) {
+                this.keyRightPressed = true;
+                this.moveLane(1);
+            }
+            if (this.cursors.right.isUp) this.keyRightPressed = false;
+
+            // Move road lines
+            this.roadLines.getChildren().forEach(line => {
+                line.y += baseSpeed * 3;
+                if (line.y > h + 40) line.y = -40;
+            });
+
+            // Spawn cacti
+            if (time - this.lastCactusSpawn > this.cactusSpawnRate) {
+                this.spawnCactus();
+                this.lastCactusSpawn = time;
+                // Increase difficulty
+                this.cactusSpawnRate = Math.max(400, 1500 - this.score * 0.3);
+            }
+
+            // Spawn turbo
+            if (time - this.lastTurboSpawn > 8000) {
+                this.spawnTurbo();
+                this.lastTurboSpawn = time;
+            }
+
+            // Move cacti
+            for (let i = this.cacti.length - 1; i >= 0; i--) {
+                const c = this.cacti[i];
+                c.y += baseSpeed * 2.5;
+
+                // Check collision with car
+                if (c.y > this.car.y - 30 && c.y < this.car.y + 30 &&
+                    c.lane === this.currentLane) {
+                    // Hit!
+                    this.cameras.main.shake(200, 0.02);
+                    this.lives--;
+                    this.updateLives();
+                    // Flash red
+                    this.car.setTint(0xff0000);
+                    this.time.delayedCall(200, () => {
+                        if (this.car) this.car.clearTint();
+                    });
+                    // Show hit effect
+                    const boom = this.add.text(c.x, c.y, '💥', { fontSize: '50px' }).setOrigin(0.5);
+                    this.tweens.add({
+                        targets: boom, alpha: 0, scaleX: 2, scaleY: 2,
+                        duration: 400, onComplete: () => boom.destroy()
+                    });
+                    c.destroy();
+                    this.cacti.splice(i, 1);
+
+                    if (this.lives <= 0) {
+                        this.endGame();
+                        return;
+                    }
+                    continue;
+                }
+
+                // Off screen
+                if (c.y > h + 60) {
+                    c.destroy();
+                    this.cacti.splice(i, 1);
+                }
+            }
+
+            // Move turbos
+            for (let i = this.turbos.length - 1; i >= 0; i--) {
+                const t = this.turbos[i];
+                t.y += baseSpeed * 2.5;
+
+                // Check collection
+                if (t.y > this.car.y - 30 && t.y < this.car.y + 30 &&
+                    t.lane === this.currentLane) {
+                    this.turboActive = true;
+                    this.turboTimer = 3000;
+                    // Car grows slightly during turbo
+                    this.car.setScale(1.2);
+                    // Show turbo pickup
+                    const fx = this.add.text(t.x, t.y, '🔥 TURBO!', {
+                        fontSize: '28px', fontFamily: 'Arial Black',
+                        color: '#00ffff',
+                        stroke: '#000', strokeThickness: 3
+                    }).setOrigin(0.5);
+                    this.tweens.add({
+                        targets: fx, y: fx.y - 80, alpha: 0,
+                        duration: 600, onComplete: () => fx.destroy()
+                    });
+                    t.destroy();
+                    this.turbos.splice(i, 1);
+                    continue;
+                }
+
+                if (t.y > h + 60) {
+                    t.destroy();
+                    this.turbos.splice(i, 1);
+                }
+            }
+
+            // Sand particles on sides
+            if (Math.random() < 0.3) {
+                const side = Math.random() < 0.5 ? this.roadLeft - 30 : this.roadRight + 30;
+                const sand = this.add.text(
+                    side + Phaser.Math.Between(-20, 20),
+                    -10, '•',
+                    { fontSize: '10px', color: '#d4a574' }
+                );
+                this.tweens.add({
+                    targets: sand,
+                    y: h + 20, alpha: 0,
+                    duration: 1500 / baseSpeed * 3,
+                    onComplete: () => sand.destroy()
+                });
+            }
+
+            // Difficulty notification
+            const level = Math.floor(this.score / 1000);
+            if (level > 0 && this.score % 1000 < 10 && !this[`shown_${level}`]) {
+                this[`shown_${level}`] = true;
+                const warn = this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2,
+                    '⚠️ DAUGIAU KAKTUSŲ!', {
+                    fontSize: '28px', fontFamily: 'Arial Black',
+                    color: '#ff6600',
+                    stroke: '#000', strokeThickness: 4
+                }).setOrigin(0.5);
+                this.tweens.add({
+                    targets: warn, alpha: 0, y: warn.y - 60,
+                    duration: 1200, onComplete: () => warn.destroy()
+                });
+            }
+        }
+
+        updateLives() {
+            this.livesText.setText('❤️'.repeat(this.lives));
+        }
+
+        endGame() {
+            this.gameOver = true;
+            const w = this.cameras.main.width;
+            const h = this.cameras.main.height;
+
+            // Save best score
+            const best = parseInt(localStorage.getItem('desert-racing-best') || '0');
+            const isNew = this.score > best;
+            if (isNew) localStorage.setItem('desert-racing-best', this.score);
+
+            // Darken screen
+            const overlay = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0);
+            this.tweens.add({
+                targets: overlay, alpha: 0.7, duration: 500
+            });
+
+            // Game over UI after short delay
+            this.time.delayedCall(600, () => {
+                this.add.text(w / 2, h * 0.2, '💥', { fontSize: '70px' }).setOrigin(0.5);
+                this.add.text(w / 2, h * 0.32, 'ŽAIDIMAS BAIGTAS!', {
+                    fontSize: '32px', fontFamily: 'Arial Black',
+                    color: '#ff4444',
+                    stroke: '#000', strokeThickness: 4
+                }).setOrigin(0.5);
+
+                this.add.text(w / 2, h * 0.43, `Atstumas: ${this.score} m`, {
+                    fontSize: '26px', fontFamily: 'Arial',
+                    color: '#ffffff'
+                }).setOrigin(0.5);
+
+                if (isNew) {
+                    const newRec = this.add.text(w / 2, h * 0.50, '🏆 NAUJAS REKORDAS! 🏆', {
+                        fontSize: '24px', fontFamily: 'Arial Black',
+                        color: '#ffd700',
+                        stroke: '#000', strokeThickness: 3
+                    }).setOrigin(0.5);
+                    this.tweens.add({
+                        targets: newRec, scaleX: 1.1, scaleY: 1.1,
+                        duration: 400, yoyo: true, repeat: -1
+                    });
+                } else {
+                    this.add.text(w / 2, h * 0.50, `Rekordas: ${best} m`, {
+                        fontSize: '20px', fontFamily: 'Arial',
+                        color: '#ffd700'
+                    }).setOrigin(0.5);
+                }
+
+                // Retry button
+                const retryBtn = this.add.graphics();
+                retryBtn.fillStyle(0xe74c3c, 1);
+                retryBtn.fillRoundedRect(w / 2 - 120, h * 0.60, 240, 60, 14);
+                retryBtn.lineStyle(2, 0xffffff, 0.8);
+                retryBtn.strokeRoundedRect(w / 2 - 120, h * 0.60, 240, 60, 14);
+                this.add.text(w / 2, h * 0.60 + 30, '🔄  IŠ NAUJO', {
+                    fontSize: '24px', fontFamily: 'Arial Black',
+                    color: '#ffffff'
+                }).setOrigin(0.5);
+                const retryZone = this.add.zone(w / 2, h * 0.60 + 30, 240, 60).setInteractive();
+                retryZone.on('pointerdown', () => this.scene.start('GameScene'));
+
+                // Menu button
+                const menuBtn = this.add.graphics();
+                menuBtn.fillStyle(0x3498db, 1);
+                menuBtn.fillRoundedRect(w / 2 - 120, h * 0.72, 240, 60, 14);
+                menuBtn.lineStyle(2, 0xffffff, 0.8);
+                menuBtn.strokeRoundedRect(w / 2 - 120, h * 0.72, 240, 60, 14);
+                this.add.text(w / 2, h * 0.72 + 30, '🏠  MENIU', {
+                    fontSize: '24px', fontFamily: 'Arial Black',
+                    color: '#ffffff'
+                }).setOrigin(0.5);
+                const menuZone = this.add.zone(w / 2, h * 0.72 + 30, 240, 60).setInteractive();
+                menuZone.on('pointerdown', () => this.scene.start('MenuScene'));
+            });
+        }
+    }
+
+    // === GAME CONFIG ===
+    const config = {
+        type: Phaser.AUTO,
+        width: 480,
+        height: 640,
+        parent: 'game-container',
+        backgroundColor: '#d4a574',
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        scene: [MenuScene, GameScene]
+    };
+
+    const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
