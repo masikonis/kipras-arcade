@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🐙 Aštuonkojis Šaulys</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #001d3d;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <script>
+    // ============================================
+    //  🐙 AŠTUONKOJIS ŠAULYS (Octopus Shooter)
+    //  Šaudyk medūzas po vandeniu! Nugalėk bosą!
+    // ============================================
+
+    const GAME_WIDTH = 480;
+    const GAME_HEIGHT = 640;
+    const BOSS_TRIGGER_KILLS = 25;
+
+    // --- MENU SCENE ---
+    class MenuScene extends Phaser.Scene {
+        constructor() { super('MenuScene'); }
+
+        create() {
+            // Deep sea gradient
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x001d3d, 0x001d3d, 0x003566, 0x003566);
+            bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Floating bubbles + sea creatures
+            const decor = ['🫧', '🐠', '🐟', '🪼', '🫧', '🐚', '🌊'];
+            for (let i = 0; i < 22; i++) {
+                const item = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(0, GAME_HEIGHT),
+                    Phaser.Utils.Array.GetRandom(decor),
+                    { fontSize: Phaser.Math.Between(18, 34) + 'px' }
+                ).setAlpha(0.28);
+                this.tweens.add({
+                    targets: item,
+                    y: item.y - Phaser.Math.Between(30, 80),
+                    x: item.x + Phaser.Math.Between(-20, 20),
+                    duration: Phaser.Math.Between(3000, 6000),
+                    yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+                });
+            }
+
+            // Big octopus
+            const octo = this.add.text(GAME_WIDTH / 2, 160, '🐙', { fontSize: '110px' })
+                .setOrigin(0.5);
+            this.tweens.add({
+                targets: octo,
+                y: 170,
+                duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+
+            // Title
+            this.add.text(GAME_WIDTH / 2, 290, 'AŠTUONKOJIS\nŠAULYS', {
+                fontSize: '48px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#7ee8fa',
+                align: 'center', lineSpacing: 6,
+                stroke: '#001d3d', strokeThickness: 5
+            }).setOrigin(0.5);
+
+            this.add.text(GAME_WIDTH / 2, 365, 'Po vandeniu! 🌊', {
+                fontSize: '20px', fontFamily: 'Arial',
+                color: '#ffd60a'
+            }).setOrigin(0.5);
+
+            // Play button
+            const btn = this.add.rectangle(GAME_WIDTH / 2, 445, 240, 65, 0x00a8e8, 1)
+                .setInteractive({ useHandCursor: true });
+            btn.setStrokeStyle(3, 0x7ee8fa, 0.8);
+
+            const btnText = this.add.text(GAME_WIDTH / 2, 445, '▶  ŠAUDYTI!', {
+                fontSize: '28px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff'
+            }).setOrigin(0.5);
+
+            btn.on('pointerover', () => { btn.setFillStyle(0x33bff2); btn.setScale(1.05); btnText.setScale(1.05); });
+            btn.on('pointerout', () => { btn.setFillStyle(0x00a8e8); btn.setScale(1); btnText.setScale(1); });
+            btn.on('pointerdown', () => this.scene.start('GameScene'));
+
+            // Instructions
+            this.add.text(GAME_WIDTH / 2, 550, 'Tempk pirštu — aštuonkojis juda! 👆\nLazeriai šaudo savaime ⚡\nRink 🖤 — sprogdink visas medūzas!', {
+                fontSize: '15px', fontFamily: 'Arial',
+                color: '#a8dadc', align: 'center', lineSpacing: 6
+            }).setOrigin(0.5);
+        }
+    }
+
+    // --- GAME SCENE ---
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        create() {
+            this.score = 0;
+            this.lives = 3;
+            this.kills = 0;
+            this.gameOver = false;
+            this.win = false;
+            this.invincible = false;
+            this.bossActive = false;
+            this.bossSpawned = false;
+
+            // Background
+            this.bgGraphics = this.add.graphics();
+            this.drawBackground();
+
+            // Bubbles decoration (parallax)
+            this.bubbles = [];
+            for (let i = 0; i < 18; i++) {
+                const b = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(0, GAME_HEIGHT),
+                    '🫧',
+                    { fontSize: Phaser.Math.Between(10, 22) + 'px' }
+                ).setAlpha(0.25);
+                b.setData('speed', Math.random() * 0.6 + 0.3);
+                this.bubbles.push(b);
+            }
+
+            // Player octopus
+            this.player = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 70, '🐙', {
+                fontSize: '54px'
+            }).setOrigin(0.5);
+            this.physics.world.enable(this.player);
+            this.player.body.setCollideWorldBounds(true);
+            this.player.body.setAllowGravity(false);
+            this.player.body.setSize(40, 40);
+
+            // Gentle bob
+            this.tweens.add({
+                targets: this.player,
+                y: this.player.y - 6,
+                duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+
+            // Groups
+            this.lasers = this.physics.add.group();
+            this.jellies = this.physics.add.group();
+            this.powerups = this.physics.add.group();
+            this.bossShots = this.physics.add.group();
+
+            // Collisions
+            this.physics.add.overlap(this.lasers, this.jellies, this.hitJelly, null, this);
+            this.physics.add.overlap(this.player, this.jellies, this.playerHit, null, this);
+            this.physics.add.overlap(this.player, this.powerups, this.collectPowerup, null, this);
+            this.physics.add.overlap(this.player, this.bossShots, this.playerHitShot, null, this);
+
+            // Spawn timers
+            this.jellyTimer = this.time.addEvent({
+                delay: 1100,
+                callback: this.spawnJelly,
+                callbackScope: this,
+                loop: true
+            });
+
+            this.laserTimer = this.time.addEvent({
+                delay: 320,
+                callback: this.shootLaser,
+                callbackScope: this,
+                loop: true
+            });
+
+            this.powerupTimer = this.time.addEvent({
+                delay: 9000,
+                callback: this.spawnPowerup,
+                callbackScope: this,
+                loop: true
+            });
+
+            // Difficulty ramp
+            this.difficultyTimer = this.time.addEvent({
+                delay: 7000,
+                callback: () => {
+                    if (this.gameOver || this.bossActive) return;
+                    this.jellyTimer.delay = Math.max(500, this.jellyTimer.delay - 90);
+                },
+                loop: true
+            });
+
+            // UI
+            this.scoreText = this.add.text(16, 16, 'Taškai: 0', {
+                fontSize: '22px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffd60a',
+                stroke: '#000', strokeThickness: 3
+            });
+
+            this.livesText = this.add.text(GAME_WIDTH - 16, 16, '❤️❤️❤️', {
+                fontSize: '22px', fontFamily: 'Arial'
+            }).setOrigin(1, 0);
+
+            this.killsText = this.add.text(16, 46, `🪼 ${this.kills}/${BOSS_TRIGGER_KILLS}`, {
+                fontSize: '16px', fontFamily: 'Arial',
+                color: '#7ee8fa', stroke: '#000', strokeThickness: 2
+            });
+
+            // Input — drag octopus horizontally
+            this.input.on('pointermove', (p) => {
+                if (this.gameOver) return;
+                if (p.isDown) {
+                    this.player.x = Phaser.Math.Clamp(p.x, 30, GAME_WIDTH - 30);
+                }
+            });
+            this.input.on('pointerdown', (p) => {
+                if (this.gameOver) return;
+                this.player.x = Phaser.Math.Clamp(p.x, 30, GAME_WIDTH - 30);
+            });
+
+            // Keyboard (for Mac testing)
+            this.cursors = this.input.keyboard.createCursorKeys();
+
+            // Initial message
+            const hi = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'TEMPK PIRŠTU! 👆', {
+                fontSize: '26px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffd60a',
+                stroke: '#001d3d', strokeThickness: 3
+            }).setOrigin(0.5).setAlpha(0);
+            this.tweens.add({
+                targets: hi, alpha: 1, duration: 400,
+                yoyo: true, hold: 1200,
+                onComplete: () => hi.destroy()
+            });
+        }
+
+        drawBackground() {
+            this.bgGraphics.clear();
+            this.bgGraphics.fillGradientStyle(0x001d3d, 0x001d3d, 0x003566, 0x0077b6);
+            this.bgGraphics.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+            // Light rays
+            this.bgGraphics.fillStyle(0x7ee8fa, 0.06);
+            this.bgGraphics.fillTriangle(80, 0, 30, GAME_HEIGHT, 180, GAME_HEIGHT);
+            this.bgGraphics.fillTriangle(350, 0, 280, GAME_HEIGHT, 430, GAME_HEIGHT);
+        }
+
+        shootLaser() {
+            if (this.gameOver) return;
+
+            const laser = this.add.rectangle(this.player.x, this.player.y - 30, 6, 22, 0xffd60a);
+            laser.setStrokeStyle(1, 0xffffff, 0.9);
+            this.lasers.add(laser);
+            this.physics.world.enable(laser);
+            laser.body.setAllowGravity(false);
+            laser.body.setVelocityY(-520);
+
+            // Muzzle flash
+            const flash = this.add.text(this.player.x, this.player.y - 25, '✨', {
+                fontSize: '20px'
+            }).setOrigin(0.5);
+            this.tweens.add({
+                targets: flash, alpha: 0, scale: 1.5,
+                duration: 200, onComplete: () => flash.destroy()
+            });
+        }
+
+        spawnJelly() {
+            if (this.gameOver || this.bossActive) return;
+
+            const x = Phaser.Math.Between(30, GAME_WIDTH - 30);
+            const size = Phaser.Math.Between(26, 38);
+            const jelly = this.add.text(x, -30, '🪼', {
+                fontSize: size + 'px'
+            }).setOrigin(0.5);
+
+            this.jellies.add(jelly);
+            this.physics.world.enable(jelly);
+            jelly.body.setAllowGravity(false);
+            jelly.body.setVelocityY(Phaser.Math.Between(60, 130));
+            jelly.body.setVelocityX(Phaser.Math.Between(-40, 40));
+            jelly.body.setSize(size * 0.75, size * 0.75);
+            jelly.setData('hp', 1);
+
+            // Wobble
+            this.tweens.add({
+                targets: jelly,
+                scaleX: 0.85, scaleY: 1.15,
+                duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+        }
+
+        spawnPowerup() {
+            if (this.gameOver || this.bossActive) return;
+
+            const p = this.add.text(
+                Phaser.Math.Between(40, GAME_WIDTH - 40),
+                -20, '🖤',
+                { fontSize: '32px' }
+            ).setOrigin(0.5);
+
+            this.powerups.add(p);
+            this.physics.world.enable(p);
+            p.body.setAllowGravity(false);
+            p.body.setVelocityY(80);
+            p.body.setSize(28, 28);
+
+            this.tweens.add({
+                targets: p,
+                scale: { from: 1, to: 1.25 },
+                duration: 400, yoyo: true, repeat: -1
+            });
+        }
+
+        hitJelly(laser, jelly) {
+            laser.destroy();
+
+            let hp = jelly.getData('hp') || 1;
+            hp--;
+            jelly.setData('hp', hp);
+
+            if (hp > 0) {
+                // Flash on hit
+                this.tweens.add({
+                    targets: jelly, alpha: 0.3,
+                    duration: 60, yoyo: true
+                });
+                this.updateBossHp();
+                return;
+            }
+
+            const isBoss = jelly.getData('isBoss');
+
+            // Pop effect
+            for (let i = 0; i < 6; i++) {
+                const p = this.add.text(
+                    jelly.x + Phaser.Math.Between(-15, 15),
+                    jelly.y + Phaser.Math.Between(-15, 15),
+                    '✨', { fontSize: '16px' }
+                );
+                this.tweens.add({
+                    targets: p,
+                    x: p.x + Phaser.Math.Between(-40, 40),
+                    y: p.y + Phaser.Math.Between(-40, 40),
+                    alpha: 0, duration: 500,
+                    onComplete: () => p.destroy()
+                });
+            }
+
+            if (isBoss) {
+                this.defeatBoss(jelly);
+                return;
+            }
+
+            jelly.destroy();
+            this.score += 10;
+            this.kills++;
+            this.scoreText.setText('Taškai: ' + this.score);
+            this.killsText.setText(`🪼 ${this.kills}/${BOSS_TRIGGER_KILLS}`);
+
+            // Score popup
+            const pop = this.add.text(jelly.x, jelly.y, '+10', {
+                fontSize: '18px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffd60a',
+                stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5);
+            this.tweens.add({
+                targets: pop, y: pop.y - 40, alpha: 0,
+                duration: 500, onComplete: () => pop.destroy()
+            });
+
+            // Trigger boss
+            if (this.kills >= BOSS_TRIGGER_KILLS && !this.bossSpawned) {
+                this.spawnBoss();
+            }
+        }
+
+        playerHit(player, jelly) {
+            if (this.invincible || this.gameOver) return;
+            if (jelly.getData('isBoss')) return; // boss contact handled separately
+            jelly.destroy();
+            this.loseLife();
+        }
+
+        playerHitShot(player, shot) {
+            if (this.invincible || this.gameOver) return;
+            shot.destroy();
+            this.loseLife();
+        }
+
+        loseLife() {
+            this.lives--;
+            this.livesText.setText('❤️'.repeat(Math.max(0, this.lives)));
+
+            this.cameras.main.shake(250, 0.025);
+            this.cameras.main.flash(180, 255, 0, 0, true);
+
+            this.invincible = true;
+            this.tweens.add({
+                targets: this.player,
+                alpha: 0.3, duration: 120,
+                yoyo: true, repeat: 6,
+                onComplete: () => {
+                    this.invincible = false;
+                    this.player.setAlpha(1);
+                }
+            });
+
+            const ouch = this.add.text(this.player.x, this.player.y - 40,
+                Phaser.Utils.Array.GetRandom(['AU! 😫', 'OI! 😬', 'NE! 😱']),
+                { fontSize: '22px', fontFamily: 'Arial', fontStyle: 'bold',
+                  color: '#ff6b6b', stroke: '#000', strokeThickness: 2 }
+            ).setOrigin(0.5);
+            this.tweens.add({
+                targets: ouch, y: ouch.y - 40, alpha: 0,
+                duration: 700, onComplete: () => ouch.destroy()
+            });
+
+            if (this.lives <= 0) this.endGame(false);
+        }
+
+        collectPowerup(player, p) {
+            p.destroy();
+            this.cameras.main.flash(300, 30, 30, 30);
+
+            // Ink cloud effect
+            const cloud = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '🖤', {
+                fontSize: '40px'
+            }).setOrigin(0.5);
+            this.tweens.add({
+                targets: cloud, scale: 20, alpha: 0,
+                duration: 700, onComplete: () => cloud.destroy()
+            });
+
+            // Announcement
+            const txt = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, '🖤 RAŠALAS! 🖤', {
+                fontSize: '34px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff',
+                stroke: '#000', strokeThickness: 4
+            }).setOrigin(0.5);
+            this.tweens.add({
+                targets: txt, scale: 1.2,
+                duration: 300, yoyo: true, hold: 500,
+                onComplete: () => txt.destroy()
+            });
+
+            // Destroy all non-boss jellies
+            let bonus = 0;
+            this.jellies.getChildren().slice().forEach(j => {
+                if (j.getData('isBoss')) return;
+                bonus += 10;
+                this.kills++;
+                // Poof
+                const poof = this.add.text(j.x, j.y, '💥', { fontSize: '24px' }).setOrigin(0.5);
+                this.tweens.add({
+                    targets: poof, scale: 2, alpha: 0,
+                    duration: 400, onComplete: () => poof.destroy()
+                });
+                j.destroy();
+            });
+            // Also clear boss shots
+            this.bossShots.getChildren().slice().forEach(s => s.destroy());
+
+            this.score += bonus;
+            this.scoreText.setText('Taškai: ' + this.score);
+            this.killsText.setText(`🪼 ${this.kills}/${BOSS_TRIGGER_KILLS}`);
+
+            if (this.kills >= BOSS_TRIGGER_KILLS && !this.bossSpawned) {
+                this.spawnBoss();
+            }
+        }
+
+        spawnBoss() {
+            this.bossSpawned = true;
+            this.bossActive = true;
+
+            // Stop regular spawns
+            this.jellyTimer.remove();
+            this.powerupTimer.remove();
+            this.difficultyTimer.remove();
+
+            // Clear remaining jellies
+            this.jellies.getChildren().slice().forEach(j => j.destroy());
+
+            // Boss warning
+            const warn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '⚠️ BOSAS! ⚠️', {
+                fontSize: '48px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ff006e',
+                stroke: '#000', strokeThickness: 5
+            }).setOrigin(0.5).setScale(0);
+            this.tweens.add({
+                targets: warn, scale: 1.2,
+                duration: 400, yoyo: true, hold: 800,
+                onComplete: () => warn.destroy()
+            });
+
+            this.cameras.main.flash(500, 255, 0, 100);
+
+            // Spawn boss after warning
+            this.time.delayedCall(1800, () => {
+                this.boss = this.add.text(GAME_WIDTH / 2, 100, '🪼', {
+                    fontSize: '100px'
+                }).setOrigin(0.5);
+                this.boss.setData('hp', 35);
+                this.boss.setData('maxHp', 35);
+                this.boss.setData('isBoss', true);
+                this.jellies.add(this.boss);
+                this.physics.world.enable(this.boss);
+                this.boss.body.setAllowGravity(false);
+                this.boss.body.setSize(70, 70);
+                this.boss.body.setVelocityX(140);
+
+                // Evil tint via scale pulse
+                this.tweens.add({
+                    targets: this.boss,
+                    scale: { from: 1, to: 1.15 },
+                    duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+                });
+
+                // Boss HP bar
+                this.bossHpBg = this.add.rectangle(GAME_WIDTH / 2, 30, 340, 18, 0x000000, 0.6)
+                    .setStrokeStyle(2, 0xff006e);
+                this.bossHpBar = this.add.rectangle(GAME_WIDTH / 2 - 168, 30, 336, 14, 0xff006e, 1)
+                    .setOrigin(0, 0.5);
+                this.bossHpLabel = this.add.text(GAME_WIDTH / 2, 30, 'BOSAS-MEDŪZA 👹', {
+                    fontSize: '13px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff',
+                    stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5);
+
+                // Boss attack — fire ink shots at player
+                this.bossAttackTimer = this.time.addEvent({
+                    delay: 1400,
+                    callback: this.bossShoot,
+                    callbackScope: this,
+                    loop: true
+                });
+
+                // Occasional minion drop during boss fight
+                this.bossMinionTimer = this.time.addEvent({
+                    delay: 3500,
+                    callback: this.bossMinion,
+                    callbackScope: this,
+                    loop: true
+                });
+            });
+        }
+
+        bossShoot() {
+            if (this.gameOver || !this.boss || !this.boss.active) return;
+
+            const shot = this.add.text(this.boss.x, this.boss.y + 40, '🖤', {
+                fontSize: '22px'
+            }).setOrigin(0.5);
+            this.bossShots.add(shot);
+            this.physics.world.enable(shot);
+            shot.body.setAllowGravity(false);
+            shot.body.setSize(18, 18);
+
+            // Aim at player
+            const dx = this.player.x - this.boss.x;
+            const dy = this.player.y - this.boss.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const speed = 260;
+            shot.body.setVelocity(dx / len * speed, dy / len * speed);
+        }
+
+        bossMinion() {
+            if (this.gameOver || !this.boss || !this.boss.active) return;
+
+            const jelly = this.add.text(this.boss.x, this.boss.y + 50, '🪼', {
+                fontSize: '26px'
+            }).setOrigin(0.5);
+            this.jellies.add(jelly);
+            this.physics.world.enable(jelly);
+            jelly.body.setAllowGravity(false);
+            jelly.body.setVelocityY(130);
+            jelly.body.setVelocityX(Phaser.Math.Between(-60, 60));
+            jelly.body.setSize(22, 22);
+            jelly.setData('hp', 1);
+
+            this.tweens.add({
+                targets: jelly,
+                scaleX: 0.85, scaleY: 1.15,
+                duration: 500, yoyo: true, repeat: -1
+            });
+        }
+
+        updateBossHp() {
+            if (!this.boss || !this.boss.active) return;
+            const hp = this.boss.getData('hp');
+            const max = this.boss.getData('maxHp');
+            const ratio = Math.max(0, hp / max);
+            this.bossHpBar.width = 336 * ratio;
+            // Color shift
+            if (ratio < 0.3) this.bossHpBar.setFillStyle(0xff0000);
+            else if (ratio < 0.6) this.bossHpBar.setFillStyle(0xff8c00);
+        }
+
+        defeatBoss(boss) {
+            boss.destroy();
+            this.score += 200;
+            this.scoreText.setText('Taškai: ' + this.score);
+
+            if (this.bossAttackTimer) this.bossAttackTimer.remove();
+            if (this.bossMinionTimer) this.bossMinionTimer.remove();
+
+            // Clean up HP bar
+            this.bossHpBg.destroy();
+            this.bossHpBar.destroy();
+            this.bossHpLabel.destroy();
+
+            // Big celebration
+            this.cameras.main.flash(600, 255, 214, 10);
+            for (let i = 0; i < 30; i++) {
+                this.time.delayedCall(i * 40, () => {
+                    const emojis = ['🎉', '✨', '⭐', '💥', '🌟'];
+                    const p = this.add.text(
+                        Phaser.Math.Between(0, GAME_WIDTH),
+                        Phaser.Math.Between(0, GAME_HEIGHT / 2),
+                        Phaser.Utils.Array.GetRandom(emojis),
+                        { fontSize: '28px' }
+                    ).setOrigin(0.5);
+                    this.tweens.add({
+                        targets: p,
+                        y: p.y + 200,
+                        alpha: 0,
+                        angle: Phaser.Math.Between(-180, 180),
+                        duration: 1200,
+                        onComplete: () => p.destroy()
+                    });
+                });
+            }
+
+            this.time.delayedCall(1200, () => this.endGame(true));
+        }
+
+        update(time, delta) {
+            if (this.gameOver) return;
+
+            // Keyboard movement (Mac)
+            if (this.cursors.left.isDown) {
+                this.player.x = Math.max(30, this.player.x - 6);
+            } else if (this.cursors.right.isDown) {
+                this.player.x = Math.min(GAME_WIDTH - 30, this.player.x + 6);
+            }
+
+            // Scroll bubbles up
+            this.bubbles.forEach(b => {
+                b.y -= b.getData('speed');
+                if (b.y < -20) {
+                    b.y = GAME_HEIGHT + 20;
+                    b.x = Phaser.Math.Between(0, GAME_WIDTH);
+                }
+            });
+
+            // Cleanup off-screen
+            this.lasers.getChildren().forEach(l => { if (l.y < -30) l.destroy(); });
+            this.jellies.getChildren().forEach(j => {
+                if (j.getData('isBoss')) return;
+                if (j.y > GAME_HEIGHT + 30) j.destroy();
+            });
+            this.powerups.getChildren().forEach(p => { if (p.y > GAME_HEIGHT + 30) p.destroy(); });
+            this.bossShots.getChildren().forEach(s => {
+                if (s.y > GAME_HEIGHT + 30 || s.y < -30 || s.x < -30 || s.x > GAME_WIDTH + 30) s.destroy();
+            });
+
+            // Boss movement bounce
+            if (this.boss && this.boss.active && this.boss.body) {
+                if (this.boss.x < 80 && this.boss.body.velocity.x < 0) {
+                    this.boss.body.setVelocityX(140);
+                } else if (this.boss.x > GAME_WIDTH - 80 && this.boss.body.velocity.x > 0) {
+                    this.boss.body.setVelocityX(-140);
+                }
+            }
+        }
+
+        endGame(won) {
+            this.gameOver = true;
+            this.win = won;
+            this.physics.pause();
+            if (this.laserTimer) this.laserTimer.remove();
+            if (this.jellyTimer) this.jellyTimer.remove();
+            if (this.powerupTimer) this.powerupTimer.remove();
+            if (this.difficultyTimer) this.difficultyTimer.remove();
+            if (this.bossAttackTimer) this.bossAttackTimer.remove();
+            if (this.bossMinionTimer) this.bossMinionTimer.remove();
+
+            this.tweens.killTweensOf(this.player);
+
+            const overlay = this.add.rectangle(
+                GAME_WIDTH / 2, GAME_HEIGHT / 2,
+                GAME_WIDTH, GAME_HEIGHT, 0x000000, 0
+            );
+            this.tweens.add({ targets: overlay, fillAlpha: 0.75, duration: 500 });
+
+            this.time.delayedCall(450, () => {
+                if (won) {
+                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, '🐙👑', {
+                        fontSize: '70px'
+                    }).setOrigin(0.5);
+
+                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, 'LAIMĖJAI!', {
+                        fontSize: '52px', fontFamily: 'Arial',
+                        fontStyle: 'bold', color: '#ffd60a',
+                        stroke: '#000', strokeThickness: 4
+                    }).setOrigin(0.5);
+
+                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10, 'Nugalėjai Bosą-Medūzą! 👹💥', {
+                        fontSize: '18px', fontFamily: 'Arial',
+                        color: '#7ee8fa', stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5);
+                } else {
+                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, '🐙💀', {
+                        fontSize: '70px'
+                    }).setOrigin(0.5);
+
+                    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, 'SUŽEISTAS!', {
+                        fontSize: '46px', fontFamily: 'Arial',
+                        fontStyle: 'bold', color: '#ff6b6b',
+                        stroke: '#000', strokeThickness: 3
+                    }).setOrigin(0.5);
+                }
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, `Taškai: ${this.score}`, {
+                    fontSize: '28px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffd60a',
+                    stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5);
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 85, `🪼 ${this.kills} medūzų sunaikinta!`, {
+                    fontSize: '18px', fontFamily: 'Arial',
+                    color: '#a8dadc', stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5);
+
+                // Retry
+                const btn = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 150, 220, 58, 0x00a8e8)
+                    .setInteractive({ useHandCursor: true });
+                btn.setStrokeStyle(2, 0x7ee8fa, 0.8);
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 150, '🔄 DAR KARTĄ!', {
+                    fontSize: '22px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff'
+                }).setOrigin(0.5);
+                btn.on('pointerover', () => btn.setFillStyle(0x33bff2));
+                btn.on('pointerout', () => btn.setFillStyle(0x00a8e8));
+                btn.on('pointerdown', () => this.scene.start('GameScene'));
+
+                // Menu
+                const menuBtn = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 215, 220, 52, 0x001d3d)
+                    .setInteractive({ useHandCursor: true });
+                menuBtn.setStrokeStyle(2, 0x00a8e8, 0.7);
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 215, '🏠 MENIU', {
+                    fontSize: '20px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#7ee8fa'
+                }).setOrigin(0.5);
+                menuBtn.on('pointerdown', () => this.scene.start('MenuScene'));
+            });
+        }
+    }
+
+    // --- LAUNCH ---
+    const config = {
+        type: Phaser.AUTO,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        parent: 'game-container',
+        backgroundColor: '#001d3d',
+        physics: {
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: [MenuScene, GameScene],
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: GAME_WIDTH,
+            height: GAME_HEIGHT
+        }
+    };
+
+    const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>

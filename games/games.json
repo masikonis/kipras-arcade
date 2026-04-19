@@ -30,5 +30,13 @@
     "emoji": "🏎️",
     "color": "#8B4513",
     "added": "2026-04-06"
+  },
+  {
+    "id": "05-octopus-shooter",
+    "title": "Aštuonkojis Šaulys",
+    "description": "Po vandeniu! Šaudyk medūzas lazeriais ir nugalėk bosą! 🐙🪼",
+    "emoji": "🐙",
+    "color": "#003566",
+    "added": "2026-04-19"
   }
 ]
