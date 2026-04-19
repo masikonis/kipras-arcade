@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🦈 Mažasis Ryklys</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #003b6f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <script>
+    // ============================================
+    //  🦈 MAŽASIS RYKLYS (Shark Pool)
+    //  Plauk baseine, venk valčių, būk nematomas!
+    // ============================================
+
+    const GAME_WIDTH = 480;
+    const GAME_HEIGHT = 640;
+    const WALL_MIN_WIDTH = 200;
+
+    // --- MENU SCENE ---
+    class MenuScene extends Phaser.Scene {
+        constructor() { super('MenuScene'); }
+
+        create() {
+            // Pool water gradient
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x00b4d8, 0x00b4d8, 0x0077b6, 0x0077b6);
+            bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Floating bubbles + water decor
+            const decor = ['🫧', '💦', '🐟', '🌊', '🫧'];
+            for (let i = 0; i < 22; i++) {
+                const item = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(0, GAME_HEIGHT),
+                    Phaser.Utils.Array.GetRandom(decor),
+                    { fontSize: Phaser.Math.Between(18, 34) + 'px' }
+                ).setAlpha(0.4);
+                this.tweens.add({
+                    targets: item,
+                    y: item.y - Phaser.Math.Between(30, 80),
+                    x: item.x + Phaser.Math.Between(-20, 20),
+                    duration: Phaser.Math.Between(3000, 6000),
+                    yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+                });
+            }
+
+            // Big shark
+            const shark = this.add.text(GAME_WIDTH / 2, 170, '🦈', { fontSize: '120px' })
+                .setOrigin(0.5);
+            this.tweens.add({
+                targets: shark,
+                y: 180,
+                duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+
+            // Title
+            this.add.text(GAME_WIDTH / 2, 300, 'MAŽASIS\nRYKLYS', {
+                fontSize: '52px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff',
+                align: 'center', lineSpacing: 6,
+                stroke: '#003b6f', strokeThickness: 6
+            }).setOrigin(0.5);
+
+            this.add.text(GAME_WIDTH / 2, 385, 'Baseine! 🏊 Venk valčių! 🚤', {
+                fontSize: '20px', fontFamily: 'Arial',
+                color: '#ffd60a',
+                stroke: '#003b6f', strokeThickness: 3
+            }).setOrigin(0.5);
+
+            // Play button
+            const btn = this.add.rectangle(GAME_WIDTH / 2, 470, 260, 70, 0x0077b6, 1)
+                .setInteractive({ useHandCursor: true });
+            btn.setStrokeStyle(4, 0xffffff, 0.9);
+
+            const btnText = this.add.text(GAME_WIDTH / 2, 470, '▶  NERTI!', {
+                fontSize: '30px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff'
+            }).setOrigin(0.5);
+
+            btn.on('pointerover', () => { btn.setFillStyle(0x0096c7); btn.setScale(1.05); btnText.setScale(1.05); });
+            btn.on('pointerout', () => { btn.setFillStyle(0x0077b6); btn.setScale(1); btnText.setScale(1); });
+            btn.on('pointerdown', () => this.scene.start('GameScene'));
+
+            // Instructions
+            this.add.text(GAME_WIDTH / 2, 555, 'Tempk pirštu — plauk ryklio!', {
+                fontSize: '16px', fontFamily: 'Arial', color: '#caf0f8'
+            }).setOrigin(0.5);
+            this.add.text(GAME_WIDTH / 2, 580, 'Rink 👻 — tapk nematomas!', {
+                fontSize: '16px', fontFamily: 'Arial', color: '#caf0f8'
+            }).setOrigin(0.5);
+            this.add.text(GAME_WIDTH / 2, 605, 'Baseinas siaurės! 🌊', {
+                fontSize: '16px', fontFamily: 'Arial', color: '#ffd60a'
+            }).setOrigin(0.5);
+        }
+    }
+
+    // --- GAME SCENE ---
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        create() {
+            this.score = 0;
+            this.lives = 3;
+            this.isInvisible = false;
+            this.invisibleTimer = 0;
+            this.gameOver = false;
+            this.poolWidth = GAME_WIDTH - 40;
+            this.boatSpeed = 140;
+            this.spawnDelay = 1200;
+            this.elapsed = 0;
+
+            // Pool background (water gradient)
+            const bg = this.add.graphics();
+            bg.fillGradientStyle(0x48cae4, 0x48cae4, 0x0077b6, 0x0077b6);
+            bg.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // Water ripples decoration
+            this.ripples = this.add.group();
+            for (let i = 0; i < 12; i++) {
+                const r = this.add.text(
+                    Phaser.Math.Between(0, GAME_WIDTH),
+                    Phaser.Math.Between(0, GAME_HEIGHT),
+                    '〰️',
+                    { fontSize: '20px' }
+                ).setAlpha(0.25);
+                this.tweens.add({
+                    targets: r,
+                    x: r.x + Phaser.Math.Between(-30, 30),
+                    alpha: 0.1,
+                    duration: Phaser.Math.Between(2000, 4000),
+                    yoyo: true, repeat: -1
+                });
+            }
+
+            // Pool walls (tiled edges that close in over time)
+            this.leftWall = this.add.rectangle(0, GAME_HEIGHT / 2, 20, GAME_HEIGHT, 0x8ecae6)
+                .setOrigin(0, 0.5);
+            this.rightWall = this.add.rectangle(GAME_WIDTH, GAME_HEIGHT / 2, 20, GAME_HEIGHT, 0x8ecae6)
+                .setOrigin(1, 0.5);
+            this.leftWall.setStrokeStyle(2, 0x023e8a);
+            this.rightWall.setStrokeStyle(2, 0x023e8a);
+
+            // Player shark
+            this.shark = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 110, '🦈', { fontSize: '54px' })
+                .setOrigin(0.5);
+            this.physics.add.existing(this.shark);
+            this.shark.body.setCircle(26, 1, 4);
+            this.shark.body.setCollideWorldBounds(true);
+
+            // Gentle shark wobble
+            this.tweens.add({
+                targets: this.shark,
+                angle: { from: -6, to: 6 },
+                duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+
+            // Groups
+            this.boats = this.physics.add.group();
+            this.fishes = this.physics.add.group();
+            this.ghosts = this.physics.add.group();
+
+            // Collisions
+            this.physics.add.overlap(this.shark, this.boats, this.hitBoat, null, this);
+            this.physics.add.overlap(this.shark, this.fishes, this.eatFish, null, this);
+            this.physics.add.overlap(this.shark, this.ghosts, this.getInvisible, null, this);
+
+            // Touch/drag controls
+            this.input.on('pointermove', (pointer) => {
+                if (this.gameOver) return;
+                if (pointer.isDown || this.input.activePointer.isDown) {
+                    this.targetX = pointer.x;
+                    this.targetY = pointer.y;
+                }
+            });
+            this.input.on('pointerdown', (pointer) => {
+                if (this.gameOver) return;
+                this.targetX = pointer.x;
+                this.targetY = pointer.y;
+            });
+
+            // Keyboard fallback
+            this.cursors = this.input.keyboard.createCursorKeys();
+
+            // HUD
+            this.scoreText = this.add.text(16, 14, '⭐ 0', {
+                fontSize: '24px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffffff',
+                stroke: '#003b6f', strokeThickness: 4
+            });
+            this.livesText = this.add.text(GAME_WIDTH - 16, 14, '❤️❤️❤️', {
+                fontSize: '22px', fontFamily: 'Arial'
+            }).setOrigin(1, 0);
+
+            this.statusText = this.add.text(GAME_WIDTH / 2, 14, '', {
+                fontSize: '20px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ffd60a',
+                stroke: '#003b6f', strokeThickness: 4
+            }).setOrigin(0.5, 0);
+
+            // Timers
+            this.boatTimer = this.time.addEvent({
+                delay: this.spawnDelay,
+                callback: this.spawnBoat,
+                callbackScope: this,
+                loop: true
+            });
+            this.fishTimer = this.time.addEvent({
+                delay: 2600,
+                callback: this.spawnFish,
+                callbackScope: this,
+                loop: true
+            });
+            this.ghostTimer = this.time.addEvent({
+                delay: 9000,
+                callback: this.spawnGhost,
+                callbackScope: this,
+                loop: true
+            });
+            // Difficulty ramp
+            this.rampTimer = this.time.addEvent({
+                delay: 6000,
+                callback: this.rampDifficulty,
+                callbackScope: this,
+                loop: true
+            });
+
+            this.targetX = this.shark.x;
+            this.targetY = this.shark.y;
+        }
+
+        update(time, delta) {
+            if (this.gameOver) return;
+
+            this.elapsed += delta;
+
+            // Narrow the pool slowly
+            const narrowing = Math.min(this.elapsed / 90000, 1);
+            const currentWallWidth = 20 + (GAME_WIDTH - WALL_MIN_WIDTH - 40) / 2 * narrowing;
+            this.leftWall.width = currentWallWidth;
+            this.rightWall.width = currentWallWidth;
+            this.poolLeft = currentWallWidth;
+            this.poolRight = GAME_WIDTH - currentWallWidth;
+
+            // Move shark toward target
+            const dx = this.targetX - this.shark.x;
+            const dy = this.targetY - this.shark.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 4) {
+                const speed = 320;
+                this.shark.body.setVelocity((dx / dist) * speed, (dy / dist) * speed);
+            } else {
+                this.shark.body.setVelocity(0, 0);
+            }
+
+            // Keyboard fallback
+            if (this.cursors.left.isDown) { this.shark.body.setVelocityX(-320); this.targetX = this.shark.x; }
+            if (this.cursors.right.isDown) { this.shark.body.setVelocityX(320); this.targetX = this.shark.x; }
+            if (this.cursors.up.isDown) { this.shark.body.setVelocityY(-320); this.targetY = this.shark.y; }
+            if (this.cursors.down.isDown) { this.shark.body.setVelocityY(320); this.targetY = this.shark.y; }
+
+            // Clamp shark inside the narrowing pool
+            if (this.shark.x < this.poolLeft + 28) this.shark.x = this.poolLeft + 28;
+            if (this.shark.x > this.poolRight - 28) this.shark.x = this.poolRight - 28;
+
+            // Invisibility timer
+            if (this.isInvisible) {
+                this.invisibleTimer -= delta;
+                if (this.invisibleTimer <= 0) {
+                    this.isInvisible = false;
+                    this.shark.setAlpha(1);
+                    this.statusText.setText('');
+                } else {
+                    const secs = Math.ceil(this.invisibleTimer / 1000);
+                    this.statusText.setText('👻 NEMATOMAS ' + secs);
+                    this.shark.setAlpha(0.35);
+                }
+            }
+
+            // Score from survival
+            this.score += delta * 0.01;
+            this.scoreText.setText('⭐ ' + Math.floor(this.score));
+
+            // Cleanup off-screen
+            this.boats.children.iterate((b) => {
+                if (b && b.y > GAME_HEIGHT + 60) b.destroy();
+            });
+            this.fishes.children.iterate((f) => {
+                if (f && f.y > GAME_HEIGHT + 40) f.destroy();
+            });
+            this.ghosts.children.iterate((g) => {
+                if (g && g.y > GAME_HEIGHT + 40) g.destroy();
+            });
+        }
+
+        spawnBoat() {
+            if (this.gameOver) return;
+            const poolCenter = GAME_WIDTH / 2;
+            const poolHalf = (this.poolRight - this.poolLeft) / 2 - 30;
+            const x = Phaser.Math.Between(poolCenter - poolHalf, poolCenter + poolHalf);
+            const boat = this.add.text(x, -40, '🚤', { fontSize: '48px' }).setOrigin(0.5);
+            this.boats.add(boat);
+            boat.body.setCircle(22, 2, 4);
+            boat.body.setVelocity(Phaser.Math.Between(-40, 40), this.boatSpeed);
+            this.tweens.add({
+                targets: boat,
+                angle: { from: -8, to: 8 },
+                duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+        }
+
+        spawnFish() {
+            if (this.gameOver) return;
+            const poolCenter = GAME_WIDTH / 2;
+            const poolHalf = (this.poolRight - this.poolLeft) / 2 - 30;
+            const x = Phaser.Math.Between(poolCenter - poolHalf, poolCenter + poolHalf);
+            const fish = this.add.text(x, -30, '🐟', { fontSize: '34px' }).setOrigin(0.5);
+            this.fishes.add(fish);
+            fish.body.setCircle(16, 1, 1);
+            fish.body.setVelocityY(120);
+        }
+
+        spawnGhost() {
+            if (this.gameOver) return;
+            const poolCenter = GAME_WIDTH / 2;
+            const poolHalf = (this.poolRight - this.poolLeft) / 2 - 30;
+            const x = Phaser.Math.Between(poolCenter - poolHalf, poolCenter + poolHalf);
+            const ghost = this.add.text(x, -30, '👻', { fontSize: '40px' }).setOrigin(0.5);
+            this.ghosts.add(ghost);
+            ghost.body.setCircle(18, 2, 2);
+            ghost.body.setVelocityY(110);
+            this.tweens.add({
+                targets: ghost,
+                scale: { from: 0.9, to: 1.15 },
+                duration: 500, yoyo: true, repeat: -1
+            });
+        }
+
+        hitBoat(shark, boat) {
+            if (this.isInvisible) return; // boats can't see us!
+            boat.destroy();
+            this.lives -= 1;
+            this.livesText.setText('❤️'.repeat(Math.max(this.lives, 0)));
+
+            // Hit feedback
+            this.cameras.main.shake(200, 0.012);
+            this.cameras.main.flash(150, 255, 60, 60);
+            this.shark.setTint(0xff5555);
+            this.time.delayedCall(300, () => { if (this.shark && this.shark.active) this.shark.clearTint(); });
+
+            if (this.lives <= 0) this.endGame();
+        }
+
+        eatFish(shark, fish) {
+            fish.destroy();
+            this.score += 15;
+            // Sparkle effect
+            const s = this.add.text(fish.x, fish.y, '✨', { fontSize: '28px' }).setOrigin(0.5);
+            this.tweens.add({
+                targets: s,
+                y: s.y - 40,
+                alpha: 0,
+                duration: 600,
+                onComplete: () => s.destroy()
+            });
+        }
+
+        getInvisible(shark, ghost) {
+            ghost.destroy();
+            this.isInvisible = true;
+            this.invisibleTimer = 5000;
+            // Ghost ring effect
+            const ring = this.add.text(this.shark.x, this.shark.y, '👻', { fontSize: '60px' }).setOrigin(0.5).setAlpha(0.7);
+            this.tweens.add({
+                targets: ring,
+                scale: 2.5,
+                alpha: 0,
+                duration: 500,
+                onComplete: () => ring.destroy()
+            });
+        }
+
+        rampDifficulty() {
+            if (this.gameOver) return;
+            // Faster boats, more often
+            this.boatSpeed = Math.min(this.boatSpeed + 15, 300);
+            this.spawnDelay = Math.max(this.spawnDelay - 80, 450);
+            this.boatTimer.reset({
+                delay: this.spawnDelay,
+                callback: this.spawnBoat,
+                callbackScope: this,
+                loop: true
+            });
+
+            // Flash warning
+            const warn = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '⚠️ GREIČIAU!', {
+                fontSize: '42px', fontFamily: 'Arial',
+                fontStyle: 'bold', color: '#ff9500',
+                stroke: '#003b6f', strokeThickness: 6
+            }).setOrigin(0.5).setAlpha(0);
+            this.tweens.add({
+                targets: warn,
+                alpha: 1,
+                scale: { from: 0.6, to: 1.2 },
+                duration: 250,
+                yoyo: true,
+                onComplete: () => warn.destroy()
+            });
+        }
+
+        endGame() {
+            this.gameOver = true;
+            this.physics.pause();
+            this.boatTimer.remove();
+            this.fishTimer.remove();
+            this.ghostTimer.remove();
+            this.rampTimer.remove();
+
+            this.shark.setTint(0x666666);
+
+            // Darken
+            const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0);
+            this.tweens.add({
+                targets: overlay, alpha: 0.6, duration: 400
+            });
+
+            this.time.delayedCall(500, () => {
+                this.add.text(GAME_WIDTH / 2, 200, '💥 PAGAUTAS!', {
+                    fontSize: '44px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ff6b6b',
+                    stroke: '#ffffff', strokeThickness: 5
+                }).setOrigin(0.5);
+
+                this.add.text(GAME_WIDTH / 2, 280, 'Taškai: ' + Math.floor(this.score), {
+                    fontSize: '34px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff'
+                }).setOrigin(0.5);
+
+                // Retry button
+                const retryBtn = this.add.rectangle(GAME_WIDTH / 2, 380, 240, 60, 0x0077b6, 1)
+                    .setInteractive({ useHandCursor: true });
+                retryBtn.setStrokeStyle(3, 0xffffff);
+                const retryText = this.add.text(GAME_WIDTH / 2, 380, '🔄 DAR KARTĄ', {
+                    fontSize: '24px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff'
+                }).setOrigin(0.5);
+                retryBtn.on('pointerdown', () => this.scene.restart());
+
+                // Menu button
+                const menuBtn = this.add.rectangle(GAME_WIDTH / 2, 460, 240, 60, 0x023e8a, 1)
+                    .setInteractive({ useHandCursor: true });
+                menuBtn.setStrokeStyle(3, 0xffffff);
+                const menuText = this.add.text(GAME_WIDTH / 2, 460, '🏠 MENIU', {
+                    fontSize: '24px', fontFamily: 'Arial',
+                    fontStyle: 'bold', color: '#ffffff'
+                }).setOrigin(0.5);
+                menuBtn.on('pointerdown', () => this.scene.start('MenuScene'));
+            });
+        }
+    }
+
+    // --- PHASER CONFIG ---
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'game-container',
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        backgroundColor: '#003b6f',
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
+        physics: {
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: [MenuScene, GameScene]
+    };
+
+    new Phaser.Game(config);
+    </script>
+</body>
+</html>
